@@ -1,16 +1,18 @@
-import { Box } from "@/components/ui/box";
-import { Button, ButtonText } from "@/components/ui/button";
-import { FormControl, FormControlError, FormControlErrorIcon, FormControlErrorText, FormControlHelper, FormControlHelperText, FormControlLabel, FormControlLabelText } from "@/components/ui/form-control";
-import { AlertCircleIcon } from "@/components/ui/icon";
-import { Input, InputField } from "@/components/ui/input";
-import { VStack } from "@/components/ui/vstack";
+import { Box } from "@/src/components/ui/box";
+import { Button, ButtonText } from "@/src/components/ui/button";
+import { FormControl, FormControlError, FormControlErrorIcon, FormControlErrorText, FormControlHelper, FormControlHelperText, FormControlLabel, FormControlLabelText } from "@/src/components/ui/form-control";
+import { AlertCircleIcon } from "@/src/components/ui/icon";
+import { Input, InputField } from "@/src/components/ui/input";
+import { VStack } from "@/src/components/ui/vstack";
+import { RootStackParamList } from "@/src/navigations/AppNavigator";
 import loginSchema from "@/src/schema/login.schema";
+import { NavigationProp, useNavigation } from "@react-navigation/native";
 import { useState } from "react";
 import { Text, Image, KeyboardAvoidingView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 const LoginPage = () => {
-    const [inputValue, setInputValue] = useState('12345');
+    const navigation = useNavigation<NavigationProp<RootStackParamList>>();
     const [form, setForm] = useState({
         username: '',
         password: '',
@@ -115,9 +117,9 @@ const LoginPage = () => {
                         >
                             <ButtonText className="text-white text-lg">Đăng nhập</ButtonText>
                         </Button>
-                       
+
                         <Text className="text-center text-gray-500 mt-4">
-                            Chưa có tài khoản? <Text className="text-primary-500 font-bold">Đăng ký</Text>
+                            Chưa có tài khoản? <Text className="text-primary-500 font-bold" onPress={() => navigation.navigate("Register" as keyof RootStackParamList)}>Đăng ký</Text>
                         </Text>
                     </VStack>
                 </Box>
