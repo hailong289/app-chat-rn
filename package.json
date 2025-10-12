@@ -1,8 +1,9 @@
 {
-  "name": "AppChatRN",
+  "name": "appchatrn",
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "preandroid": "node scripts/generate-firebase-config.js",
     "android": "react-native run-android",
     "android:cleanrun": "node scripts/clean-android-storage.js && npx react-native run-android",
     "ios": "react-native run-ios",
