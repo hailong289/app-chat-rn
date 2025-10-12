@@ -1,4 +1,4 @@
-import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword } from "../types/auth.type";
+import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword, PayloadVerifyOtp } from "../types/auth.type";
 import ApiResponse from "../types/response.type";
 import apiService from "./api.service";
 
@@ -10,18 +10,31 @@ export default class AuthService {
     }
 
     public static async register(payload: Omit<PayloadRegister, 'success' | 'error'>) {
-        return apiService.post<ApiResponse<AuthMetadata>>('/auth/register', payload);
+        const params: any = { ...payload };
+        if (params.type === 'phone') {
+            params.phone = params.username;
+            delete params.username;
+        } else {
+            params.email = params.username;
+            delete params.username;
+        }
+        delete params.confirm;
+        return await apiService.post<ApiResponse<AuthMetadata>>('/auth/register', params);
     }
 
     public static async logout() {
-        return apiService.post('/auth/logout');
+        return await apiService.post('/auth/logout');
     }
 
     public static async forgotPassword(payload: Omit<PayloadForgotPassword, 'success' | 'error'>) {
-        return apiService.post('/auth/forgot-password', payload);
+        return await apiService.post('/auth/forgot-password', { ...payload, isMobile: true });
     }
 
-    public static async resetPassword(payload: Omit<PayloadResetPassword, 'success' | 'error'>) {
-        return apiService.post('/auth/reset-password', payload);
+    public static async verifyOtp(payload: Omit<PayloadVerifyOtp, 'success' | 'error'>) {
+        return await apiService.post<ApiResponse<any>>('/auth/verify-otp', payload);
+    }
+
+    public  static async resetPassword(data: Omit<PayloadResetPassword, 'success' | 'error'>) {
+        return (await apiService.setAuthorization(data.token)).post<ApiResponse<any>>('/auth/reset-password', { newPassword: data.newPassword });
     }
 }

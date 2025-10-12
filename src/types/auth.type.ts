@@ -55,10 +55,17 @@ export interface PayloadForgotPassword {
     error: (error?: any) => void;
 }
 
+export interface PayloadVerifyOtp {
+    indicator: string;
+    otp: string;
+    type: "reset-password" | "verify-account";
+    success: (data?: any) => void;
+    error: (error?: any) => void;
+}
+
 export interface PayloadResetPassword {
-    token: string;
+    token: string; // token nhận được sau khi xác thực OTP thành công
     newPassword: string;
-    confirmPassword: string;
     success: (data?: any) => void;
     error: (error?: any) => void;
 }
@@ -78,5 +85,6 @@ export interface AuthState {
     register: (payload: PayloadRegister) => Promise<void>;
     logout: (payload: PayloadLogout) => Promise<void>;
     forgotPassword: (payload: PayloadForgotPassword) => Promise<void>;
+    verifyOtp: (payload: PayloadVerifyOtp) => Promise<void>;
     resetPassword: (payload: PayloadResetPassword) => Promise<void>;
 }

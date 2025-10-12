@@ -1,5 +1,5 @@
 import { Box } from "@/src/components/ui/box";
-import { Button, ButtonText } from "@/src/components/ui/button";
+import { Button, ButtonSpinner, ButtonText } from "@/src/components/ui/button";
 import { FormControl, FormControlError, FormControlErrorIcon, FormControlErrorText, FormControlLabel, FormControlLabelText } from "@/src/components/ui/form-control";
 import { AlertCircleIcon, ChevronDownIcon } from "@/src/components/ui/icon";
 import { Input, InputField } from "@/src/components/ui/input";
@@ -13,10 +13,12 @@ import { useState } from "react";
 import { Text, Image, KeyboardAvoidingView, View, TouchableOpacity, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import DatePicker from 'react-native-date-picker'
+import { Constants } from "@/src/libs/constants";
+import useAuthStore from "@/src/store/useAuth";
+import { Toast } from "toastify-react-native";
 
 const RegisterPage = () => {
     const navigation = useNavigation<NavigationProp<RootStackParamList>>();
-    const [activeTab, setActiveTab] = useState<'email' | 'phone'>('email');
     const [form, setForm] = useState({
         fullname: "",
         username: "",
@@ -27,63 +29,79 @@ const RegisterPage = () => {
         type: "email" as "email" | "phone",
         fcmToken: null as string | null,
     });
-    const [errors, setErrors] = useState({
-        fullname: '',
-        username: '',
-        password: '',
-        confirm: '',
-        gender: '',
-    });
-    const [open, setOpen] = useState(false)
+    const [errors, setFieldErrors] = useState<Record<string, string>>({});
+    const [open, setOpen] = useState(false);
+    const { register, isLoading } = useAuthStore();
 
     const handleInputChange = (field: string, value: string | Date) => {
-        validateField(field, value);
         setForm({ ...form, [field]: value });
     };
 
     const handleTabChange = (tab: 'email' | 'phone') => {
-        setActiveTab(tab);
-        setForm({ ...form, username: '' });
-        setErrors({ ...errors, username: '' });
+        setForm({ ...form, username: '', type: tab });
+        setFieldErrors({ ...errors, username: '' });
     }
 
     const validateField = (field: string, value: string | Date) => {
-        if (field === 'username') {
-            let error = '';
-            setErrors((prev) => ({ ...prev, username: error }));
-        } else {
-            const fieldSchema = registerSchema.extract(field);
-            const { error } = fieldSchema.validate(value);
-            setErrors((prev) => ({
-                ...prev,
-                [field]: error ? error.details[0].message : '',
-            }));
-        }
+        const fieldSchema = registerSchema.extract(field);
+        const { error } = fieldSchema.validate(value, { context: { type: form.type, password: form.password } });
+        setFieldErrors((prev) => ({
+            ...prev,
+            [field]: error ? error.details[0].message : '',
+        }));
     };
 
     const handleSubmit = () => {
-        const { error } = registerSchema.validate(form, { abortEarly: false });
+        const { error, value: parsedData } = registerSchema.validate(form);
+        console.log({ parsedData, error });
         if (error) {
-            const newErrors: any = {};
-            error.details.forEach((err) => {
-                newErrors[err.path[0]] = err.message;
+            const errors: Record<string, string> = {};
+            error.details.forEach((detail) => {
+                const field = detail.path[0] as string;
+                errors[field] = detail.message;
             });
-            setErrors(newErrors);
-        } else {
-            setErrors({
-                fullname: '',
-                username: '',
-                password: '',
-                confirm: '',
-                gender: '',
-            });
-            console.log('✅ Form hợp lệ:', form);
+            setFieldErrors(errors);
+            return;
         }
+        console.log('✅ Form hợp lệ:', parsedData);
+        // Call the register function from the auth store
+        register({
+            fullname: parsedData.fullname,
+            username: parsedData.username,
+            password: parsedData.password,
+            confirm: parsedData.confirm,
+            gender: parsedData.gender as "male" | "female" | "other",
+            dateOfBirth: Helpers.formatDateToString(parsedData.dateOfBirth, 'YYYY-MM-DD'),
+            type: parsedData.type,
+            fcmToken: parsedData.fcmToken,
+            success: () => {
+                Toast.show({
+                    type: 'success',
+                    text1: 'Đăng ký thành công',
+                });
+            },
+            error: ({ message }) => {
+                console.log('Register error:', message);
+                Toast.show({
+                    type: 'error',
+                    text1: 'Đăng ký thất bại',
+                    text2: message || 'Vui lòng thử lại sau.',
+                    position: 'top',
+                    visibilityTime: 4000,
+                    autoHide: true,
+                })
+            }
+        });
     };
+
     return (
         <SafeAreaView edges={['top', 'bottom']}>
-            <ScrollView>
-                <KeyboardAvoidingView behavior="padding">
+            <KeyboardAvoidingView behavior="padding">
+                <ScrollView
+                    contentContainerStyle={{ flexGrow: 1 }}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                >
                     <Box style={{ padding: 24, gap: 20 }}>
                         <Image
                             className="mt-4"
@@ -95,18 +113,18 @@ const RegisterPage = () => {
                         {/* Tab Header */}
                         <View className="flex-row bg-gray-200 rounded-[20px] p-1 mb-4">
                             <TouchableOpacity
-                                className={`flex-1 py-3 px-4 rounded-[20px] ${activeTab === 'email' ? 'bg-primary-500' : 'bg-transparent'}`}
+                                className={`flex-1 py-3 px-4 rounded-[20px] ${form.type === 'email' ? 'bg-primary-500' : 'bg-transparent'}`}
                                 onPress={() => handleTabChange('email')}
                             >
-                                <Text className={`text-center font-medium ${activeTab === 'email' ? 'text-white' : 'text-gray-600'}`}>
+                                <Text className={`text-center font-medium ${form.type === 'email' ? 'text-white' : 'text-gray-600'}`}>
                                     Email
                                 </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                className={`flex-1 py-3 px-4 rounded-[20px] ${activeTab === 'phone' ? 'bg-primary-500' : 'bg-transparent'}`}
+                                className={`flex-1 py-3 px-4 rounded-[20px] ${form.type === 'phone' ? 'bg-primary-500' : 'bg-transparent'}`}
                                 onPress={() => handleTabChange('phone')}
                             >
-                                <Text className={`text-center font-medium ${activeTab === 'phone' ? 'text-white' : 'text-gray-600'}`}>
+                                <Text className={`text-center font-medium ${form.type === 'phone' ? 'text-white' : 'text-gray-600'}`}>
                                     Số điện thoại
                                 </Text>
                             </TouchableOpacity>
@@ -130,6 +148,7 @@ const RegisterPage = () => {
                                         value={form.fullname}
                                         className="text-gray-500"
                                         onChangeText={(text) => handleInputChange('fullname', text)}
+                                        onBlur={() => validateField('fullname', form.fullname)}
                                     />
                                 </Input>
                                 <FormControlError>
@@ -148,17 +167,17 @@ const RegisterPage = () => {
                             >
                                 <FormControlLabel>
                                     <FormControlLabelText>
-                                        {activeTab === 'email' ? 'Email' : 'Số điện thoại'}
+                                        {form.type === 'email' ? 'Email' : 'Số điện thoại'}
                                     </FormControlLabelText>
                                 </FormControlLabel>
                                 <Input className="my-1 h-[50px] border-gray-300 rounded-[20px]" size="md" variant="outline">
                                     <InputField
                                         type="text"
-                                        placeholder={activeTab === 'email' ? 'Nhập địa chỉ email' : 'Nhập số điện thoại'}
+                                        placeholder={form.type === 'email' ? 'Nhập địa chỉ email' : 'Nhập số điện thoại'}
                                         value={form.username}
                                         className="text-gray-500"
-                                        keyboardType={activeTab === 'email' ? 'email-address' : 'phone-pad'}
                                         onChangeText={(text) => handleInputChange('username', text)}
+                                        onBlur={() => validateField('username', form.username)}
                                     />
                                 </Input>
                                 <FormControlError>
@@ -185,6 +204,7 @@ const RegisterPage = () => {
                                         value={form.password}
                                         className="text-gray-500"
                                         onChangeText={(text) => handleInputChange('password', text)}
+                                        onBlur={() => validateField('password', form.password)}
                                     />
                                 </Input>
                                 <FormControlError>
@@ -211,6 +231,7 @@ const RegisterPage = () => {
                                         value={form.confirm}
                                         className="text-gray-500"
                                         onChangeText={(text) => handleInputChange('confirm', text)}
+                                        onBlur={() => validateField('confirm', form.confirm)}
                                     />
                                 </Input>
                                 <FormControlError>
@@ -259,22 +280,22 @@ const RegisterPage = () => {
                                     <FormControlLabelText>Giới tính</FormControlLabelText>
                                 </FormControlLabel>
                                 <Select
-                                    defaultValue={form.gender}
+                                    selectedValue={form.gender}
                                     onValueChange={(value) => handleInputChange('gender', value)}
-
+                                    defaultValue={form.gender}
                                 >
                                     <SelectTrigger variant="outline" size="md" className="my-1 h-[50px] border-gray-300 rounded-[20px] flex justify-between">
-                                        <SelectInput placeholder="Chọn giới tính" />
+                                        <SelectInput placeholder="Chọn giới tính" value={Constants.GENDER_OPTIONS[form.gender as keyof typeof Constants.GENDER_OPTIONS] as string} />
                                         <SelectIcon className="mr-3" as={ChevronDownIcon} />
                                     </SelectTrigger>
                                     <SelectPortal>
                                         <SelectBackdrop />
-                                        <SelectContent>
+                                        <SelectContent className="bg-white rounded-lg">
                                             <SelectDragIndicatorWrapper>
                                                 <SelectDragIndicator />
                                             </SelectDragIndicatorWrapper>
                                             <SelectItem label="Nam" value="male" />
-                                            <SelectItem label="Nữ" value="female" />
+                                            <SelectItem label="Nữ" value="female" className="mb-[20px]" />
                                         </SelectContent>
                                     </SelectPortal>
                                 </Select>
@@ -289,7 +310,9 @@ const RegisterPage = () => {
                                 className="mt-4 rounded-[20px] h-[50px]"
                                 variant="primary"
                                 onPress={handleSubmit}
+                                isDisabled={isLoading}
                             >
+                                {isLoading && <ButtonSpinner color="gray" />}
                                 <ButtonText className="text-white text-lg">Đăng ký</ButtonText>
                             </Button>
 
@@ -298,8 +321,8 @@ const RegisterPage = () => {
                             </Text>
                         </VStack>
                     </Box>
-                </KeyboardAvoidingView>
-            </ScrollView>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 };

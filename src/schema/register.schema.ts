@@ -35,7 +35,7 @@ const registerSchema = Joi.object({
       "any.required": "Trường này không được để trống",
       "string.empty": "Trường này không được để trống",
       "string.email": "Vui lòng nhập email hợp lệ",
-      "string.pattern.base": "Vui lòng nhập số điện thoại hợp lệ",
+      "string.pattern.base": "Vui lòng nhập số điện thoại hợp lệ (có mã vùng Việt Nam)",
     }),
   password: Joi.string().min(6).required().messages({
     'any.required': 'Mật khẩu không được để trống',

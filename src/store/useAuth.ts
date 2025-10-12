@@ -26,7 +26,8 @@ const useAuthStore = create<AuthState>()(
                     const response = await AuthService.login({ username, password, fcmToken });
                     set({
                         isAuthenticated: true,
-                        isLoading: false, user: response.data.metadata?.user,
+                        isLoading: false,
+                        user: response.data.metadata?.user,
                         tokens: {
                             accessToken: response.data.metadata?.accessToken || null,
                             refreshToken: response.data.metadata?.refreshToken || null,
@@ -44,7 +45,18 @@ const useAuthStore = create<AuthState>()(
                 set({ isLoading: true });
                 try {
                     const response = await AuthService.register(payload);
-                    set({ isAuthenticated: true, isLoading: false, user: response.data.metadata?.user });
+                    const dateNow = Math.floor(Date.now() / 1000);
+                    set({
+                        isAuthenticated: true,
+                        isLoading: false,
+                        user: response.data.metadata?.user,
+                        tokens: {
+                            accessToken: response.data.metadata?.accessToken || null,
+                            refreshToken: response.data.metadata?.refreshToken || null,
+                            expiresIn: response.data.metadata?.expiresIn || 0,
+                            expiredAt: dateNow + (response.data.metadata?.expiresIn || 0),
+                        }
+                    });
                     payload.success?.(response.data);
                 } catch (error) {
                     set({ isAuthenticated: false, isLoading: false, user: null });
@@ -56,9 +68,9 @@ const useAuthStore = create<AuthState>()(
                 try {
                     await AuthService.logout();
                     set({ isAuthenticated: false, isLoading: false, user: null, tokens: null });
-                    await Helpers.removeStorage("tokens");
                     payload.success?.();
                 } catch (error) {
+                    set({ isLoading: false });
                     payload.error?.(error);
                 }
 
@@ -74,12 +86,23 @@ const useAuthStore = create<AuthState>()(
                     set({ isLoading: false });
                 }
             },
+            verifyOtp: async (payload) => {
+                set({ isLoading: true });
+                try {
+                    const response = await AuthService.verifyOtp(payload);
+                    set({ isLoading: false });
+                    payload.success?.(response.data?.metadata);
+                } catch (error) {
+                    payload.error?.(error);
+                    set({ isLoading: false });
+                }
+            },
             resetPassword: async (payload) => {
                 set({ isLoading: true });
                 try {
-                    await AuthService.resetPassword(payload);
+                    const response = await AuthService.resetPassword(payload);
                     set({ isLoading: false });
-                    payload.success?.();
+                    payload.success?.(response.data?.metadata);
                 } catch (error) {
                     payload.error?.(error);
                     set({ isLoading: false });

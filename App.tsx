@@ -14,6 +14,7 @@ import {
 import AppNavigator from './src/navigations/AppNavigator';
 import { GluestackUIProvider } from '@/src/components/ui/gluestack-ui-provider';
 import '@/global.css';
+import ToastManager from 'toastify-react-native'
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -21,12 +22,12 @@ function App() {
   return (
     <GluestackUIProvider mode="dark" >
       <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      {/* <AppContent /> */}
-      <AppNavigator />
-    </SafeAreaProvider>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+        {/* <AppContent /> */}
+        <AppNavigator />
+        <ToastManager />
+      </SafeAreaProvider>
     </GluestackUIProvider>
-  
   );
 }
 

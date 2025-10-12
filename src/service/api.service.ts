@@ -1,14 +1,18 @@
 import axios from "axios";
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL, APP_ENV, API_URL_PRODUCTION } from "@/env.json";
+import useAuthStore from "../store/useAuth";
 
 class ApiService {
     private static instance: ApiService;
     private axiosInstance;
 
     private constructor() {
+        const baseURL = APP_ENV === 'production' ? API_URL_PRODUCTION : API_URL;
         // Khởi tạo axios instance với cấu hình mặc định
         this.axiosInstance = axios.create({
-            baseURL: 'http://localhost:5000/api', // Thay đổi thành URL API thực tế
+            baseURL: `${baseURL}/api`,
+            timeout: 10000, // Thời gian chờ mặc định 10 giây (Nếu cần tăng thêm, có thể sử dụng phương thức withTimeout)
         });
         this.axiosInstance.interceptors.request.use(async (config) => {
             if (config.data instanceof FormData) {
@@ -28,11 +32,11 @@ class ApiService {
                 config.headers["Content-Type"] = "text/plain";
             }
             // Kiểm tra và thêm header Authorization nếu token tồn tại
-            const tokens = await AsyncStorage.getItem('tokens');
-            if (tokens) {
-                const { accessToken: token } = JSON.parse(tokens as string);
-                config.headers["Authorization"] = `Bearer ${token}`;
+            const { accessToken } = await this.getTokens();
+            if (accessToken) {
+                config.headers["Authorization"] = `Bearer ${accessToken}`;
             }
+            console.log('Request Config:', config, accessToken);
             return config;
         });
 
@@ -45,7 +49,6 @@ class ApiService {
                 const reasonStatusCode = error.response?.statusText || "Internal Server Error";
                 const responseData = error.response?.data;
                 return Promise.reject({
-                    success: false,
                     statusCode,
                     reasonStatusCode,
                     message: this.formatValidationErrors(responseData) || responseData?.message || error.message,
@@ -135,8 +138,19 @@ class ApiService {
             }).join('; ');
         }
 
-        return errorData?.message || errorData?.toString() || 'Unknown error';
+        return errorData?.message || errorData?.toString() || 'Có lỗi xảy ra';
     }
+
+    private getTokens = async () => {
+        const tokens = useAuthStore.getState().tokens;
+        console.log('Tokens:', tokens,useAuthStore.getState());
+        return {
+            accessToken: tokens?.accessToken || null,
+            refreshToken: tokens?.refreshToken || null,
+            expiresIn: tokens?.expiresIn || 0,
+            expiredAt: tokens?.expiredAt || 0,
+        };
+    };
 }
 
 export default ApiService.getInstance();

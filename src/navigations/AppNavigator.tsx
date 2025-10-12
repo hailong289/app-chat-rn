@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import AuthNavigator from './AuthNavigator';
 import MainNavigator from './MainNavigator';
+import useAuthStore from '../store/useAuth';
 
 // Placeholder screens - replace these with your actual screens
 const HomeScreen = () => <></>;
@@ -19,7 +20,7 @@ export type RootStackParamList = {
 const RootStack = createStackNavigator<RootStackParamList>();
 // Root navigator
 const AppNavigator = () => {
-    const isAuthenticated = false; // Replace with your authentication logic
+    const { isAuthenticated } = useAuthStore(); 
 
     return (
         <NavigationContainer>

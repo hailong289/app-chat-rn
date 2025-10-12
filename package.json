@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "android": "react-native run-android",
+    "android:cleanrun": "node scripts/clean-android-storage.js && npx react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
@@ -12,7 +13,8 @@
     "android:clean": "cd android && gradlew clean",
     "android:remove:build": "cd android && rd /s /q build",
     "android:remove:app": "adb uninstall com.appchatrn",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "generate:icon:app": "node scripts/generate-icons.js"
   },
   "dependencies": {
     "@expo/html-elements": "^0.12.5",
@@ -20,6 +22,9 @@
     "@gluestack-ui/utils": "^3.0.7",
     "@legendapp/motion": "^2.4.0",
     "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-native-vector-icons/evil-icons": "^12.3.0",
+    "@react-native-vector-icons/fontawesome": "^12.3.0",
+    "@react-native-vector-icons/fontawesome6": "^12.2.0",
     "@react-native/new-app-screen": "0.82.0",
     "@react-navigation/bottom-tabs": "^7.4.8",
     "@react-navigation/native": "^7.1.18",
@@ -27,6 +32,7 @@
     "@react-navigation/stack": "^7.4.9",
     "axios": "^1.12.2",
     "joi": "^18.0.1",
+    "lucide-react-native": "^0.545.0",
     "nativewind": "^4.1.23",
     "persist": "^0.2.7",
     "react": "^19.1.1",
@@ -38,11 +44,14 @@
     "react-native-reanimated": "~4.1.0",
     "react-native-safe-area-context": "^5.6.1",
     "react-native-screens": "^4.16.0",
-    "react-native-svg": "^15.14.0",
+    "react-native-svg": "^15.12.0",
+    "react-native-vector-icons": "^10.3.0",
     "react-native-worklets": "^0.6.1",
     "react-stately": "^3.39.0",
+    "sharp": "^0.34.4",
     "tailwind-variants": "^0.1.20",
     "tailwindcss": "^3.4.17",
+    "toastify-react-native": "^7.2.3",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

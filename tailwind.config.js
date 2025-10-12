@@ -1,3 +1,5 @@
+const { red } = require('react-native-reanimated/lib/typescript/Colors');
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   darkMode: process.env.DARK_MODE ? process.env.DARK_MODE : 'class', // or 'media' or 'class'
@@ -30,6 +32,9 @@ module.exports = {
         },
         error: {
           500: '#f31261', // button error color
+        },
+        negative: {
+          500: '#f31261', // button negative color
         },
         success: {
           500: '#17c964', // button success color
