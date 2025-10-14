@@ -10,7 +10,7 @@
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
       android:theme="@style/AppTheme"
-      android:usesCleartextTraffic="${usesCleartextTraffic}"
+      android:usesCleartextTraffic="true"
       android:supportsRtl="true">
       <activity
         android:name=".MainActivity"
@@ -24,22 +24,5 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
-
-       <!-- Dịch vụ nhận FCM -->
-      <service
-        android:name="io.invertase.firebase.messaging.ReactNativeFirebaseMessagingService"
-        android:exported="true">
-        <intent-filter>
-          <action android:name="com.google.firebase.MESSAGING_EVENT" />
-        </intent-filter>
-      </service>
-
-      <service
-        android:name="io.invertase.firebase.messaging.ReactNativeFirebaseMessagingHeadlessService"
-        android:exported="true" />
-
-      <meta-data
-        android:name="com.google.firebase.messaging.default_notification_channel_id"
-        android:value="default_channel" />
     </application>
 </manifest>
