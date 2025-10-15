@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import messaging from '@react-native-firebase/messaging';
 import { Alert } from 'react-native';
-import { Permission } from '../libs/permission';
+import Permission from '../libs/permission';
 import { FirebaseContextType } from '../types/firebase.type';
 import notifee, { AndroidStyle } from '@notifee/react-native';
 
@@ -22,15 +22,12 @@ export const FirebaseProvider = ({ children }: { children: ReactNode }) => {
       try {
         // Xin quyền thông báo
         await Permission.requestNotificationPermission();
-
         // Lấy token FCM
         const token = await messaging().getToken();
         setFcmToken(token);
         console.log('📱 FCM Token:', token);
-
         // Lắng nghe token refresh
         const unsubscribeToken = messaging().onTokenRefresh(setFcmToken);
-
         // Lắng nghe thông báo foreground
         const unsubscribeMessage = messaging().onMessage(async remoteMessage => {
           const { title, body } = remoteMessage.notification || {};

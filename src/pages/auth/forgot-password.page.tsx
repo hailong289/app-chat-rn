@@ -146,7 +146,7 @@ const ForgotPasswordPage = () => {
             </FormControl>
             <Button
               className="mt-4 rounded-[20px] h-[50px]"
-              variant="primary"
+              variant="solid"
               onPress={handleSubmit}
               isDisabled={isLoading}
             >

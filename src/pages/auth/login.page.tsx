@@ -5,6 +5,7 @@ import { AlertCircleIcon, EyeIcon, Icon } from "@/src/components/ui/icon";
 import { Input, InputField } from "@/src/components/ui/input";
 import { VStack } from "@/src/components/ui/vstack";
 import { RootStackParamList } from "@/src/navigations/AppNavigator";
+import { useFirebase } from "@/src/providers/firebase.provider";
 import loginSchema from "@/src/schema/login.schema";
 import useAuthStore from "@/src/store/useAuth";
 import { NavigationProp, useNavigation } from "@react-navigation/native";
@@ -22,6 +23,7 @@ const LoginPage = () => {
     const [errors, setFieldErrors] = useState<Record<string, string>>({});
     const { login, isLoading } = useAuthStore();
     const [showPassword, setShowPassword] = useState(false);
+    const { fcmToken } = useFirebase();
 
     const handleInputChange = (field: string, value: string) => {
         setForm({ ...form, [field]: value });
@@ -50,7 +52,7 @@ const LoginPage = () => {
         login({
             username: parsedData.username,
             password: parsedData.password,
-            fcmToken: null,
+            fcmToken: fcmToken,
             success: () => {
                 Toast.show({
                     type: 'success',
@@ -144,7 +146,7 @@ const LoginPage = () => {
                         <Text className="text-right text-primary-500 font-bold"  onPress={() => navigation.navigate("ForgotPassword" as keyof RootStackParamList)}>Quên mật khẩu?</Text>
                         <Button
                             className="mt-4 rounded-[20px] h-[50px]"
-                            variant="primary"
+                            variant="solid"
                             onPress={handleSubmit}
                             isDisabled={isLoading}
                         >
