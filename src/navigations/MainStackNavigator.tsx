@@ -2,11 +2,16 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import MainNavigator from './MainNavigator';
 import SearchPage from '../pages/search.page';
+import ChatPage from '../pages/chat.page';
 import HeaderSearchComponent from '../components/headers/headers-search.component';
+import HeaderChatComponent from '../components/headers/headers-chat.component';
 
 export type MainStackParamList = {
     Main: undefined;
     Search: undefined;
+    Chat: {
+        roomId: string;
+    };
 };
 
 const MainStack = createStackNavigator<MainStackParamList>();
@@ -36,9 +41,16 @@ const MainStackNavigator = () => {
                     )
                 }} 
             />
+            <MainStack.Screen 
+                name="Chat" 
+                component={ChatPage} 
+                options={{ 
+                    headerShown: true,
+                    header: (props) => <HeaderChatComponent {...props} />
+                }}
+            />
         </MainStack.Navigator>
     );
 };
 
 export default MainStackNavigator;
-

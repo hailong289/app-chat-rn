@@ -23,6 +23,11 @@ class DB {
         groupBy: [] as string[],
         values: [] as string[],
     };
+    private log = {
+        query: '',
+        params: [] as any[],
+        enable: false,
+    }
 
     private constructor() {
        try {
@@ -43,79 +48,162 @@ class DB {
         return DB.instance;
     }
 
-    public static setTable(name: string, as: string | null = null) {
-        this.getInstance().bindings.table.name = name;
-        this.getInstance().bindings.table.as = as;
-        return this.getInstance();
+    public static enableLog(enable: boolean) {
+        DB.getInstance().log.enable = enable;
+        return this;
     }
 
-    public static select(columns: string[]) {
-        this.getInstance().bindings.column.push(...columns);
-        return this.getInstance();
+    public static logQuery(query: string, params: any[]) {
+        DB.getInstance().log.query = query;
+        DB.getInstance().log.params = params;
+        return this;
     }
 
-    public static where(column: string, operator: string, value: string) {
-        this.getInstance().bindings.where.push({
+    public static getLog() {
+        return DB.getInstance().log;
+    }
+
+    public static getLogRaw() {
+        const { query, params } = DB.getInstance().log;
+        let queryRaw = query;
+        for (const param of params) {
+            queryRaw = queryRaw.replace('?', typeof param === 'string' ? `'${param}'` : param?.toString() ?? '');
+        }
+        return queryRaw;
+    }
+
+    public setTable(name: string, as: string | null = null) {
+        this.bindings.table.name = name;
+        this.bindings.table.as = as;
+        return this;
+    }
+
+    public select(columns: string[]) {
+        this.bindings.column.push(...columns);
+        return this;
+    }
+
+    public where(column: string, operator: string, value: string) {
+        this.bindings.where.push({
             column,
             operator,
             value: '?',
         });
-        this.getInstance().bindings.values.push(value);
-        return this.getInstance();
+        this.bindings.values.push(value);
+        return this;
     }
 
-    public static orderBy(column: string, direction: 'ASC' | 'DESC') {
-        this.getInstance().bindings.orderBy.push({
+    public whereIn(column: string, values: string[]) {
+        this.bindings.where.push({
+            column,
+            operator: 'IN',
+            value: values.map(() => '?').join(','),
+        });
+        this.bindings.values.push(...values);
+        return this;
+    }
+
+    public whereNotIn(column: string, values: string[]) {
+        this.bindings.where.push({
+            column,
+            operator: 'NOT IN',
+            value: values.map(() => '?').join(','),
+        });
+        this.bindings.values.push(...values);
+        return this;
+    }
+
+
+    public orderBy(column: string, direction: 'ASC' | 'DESC') {
+        this.bindings.orderBy.push({
             column,
             direction,
         });
-        return this.getInstance();
+        return this;
     }
 
-    public static limit(limit: number) {
-        this.getInstance().bindings.limit = limit;
-        return this.getInstance();
+    public limit(limit: number) {
+        this.bindings.limit = limit;
+        return this;
     }
 
-    public static offset(offset: number) {
-        this.getInstance().bindings.offset = offset;
-        return this.getInstance();
+    public offset(offset: number) {
+        this.bindings.offset = offset;
+        return this;
     }
 
-    public static groupBy(column: string) {
-        this.getInstance().bindings.groupBy.push(column);
-        return this.getInstance();
+    public groupBy(column: string) {
+        this.bindings.groupBy.push(column);
+        return this;
     }
 
-    public static async get() {
+
+    public async get() {
+        const params = this.bindings.values;
         const query = this.getQuery('select');
+        const result = await this.db.executeAsync(query, params);
+        return result?.rows?._array;
+    }
 
-        const result = await this.getInstance().db.executeAsync(query);
+    public async getOne() {
+        const params = this.bindings.values;
+        const query = this.getQuery('select');
+        const result = await this.db.executeAsync(query, params);
+        return result?.rows?._array?.[0];
+    }
+
+    public async exists() {
+        const params = this.bindings.values;
+        const query = this.getQuery('select');
+        const result = await this.db.executeAsync(query, params);
+        return (result?.rows?._array?.length ?? 0) > 0;
+    }
+
+    public async insert(data: Record<string, any>) {
+        const columns = Object.keys(data);
+        const values = Object.values(data);
+        this.bindings.column.push(...columns);
+        this.bindings.values.push(...values);
+        const params = this.bindings.values;
+        const query = this.getQuery('insert');
+        const result = await this.db.executeAsync(query, params);
         return result;
     }
 
-    public static async insert(columns: string[], values: string[]) {
-        this.getInstance().bindings.column.push(...columns);
-        this.getInstance().bindings.values.push(...values);
-        const query = this.getQuery('insert');
-        return await this.getInstance().db.executeAsync(query);
+    public async insertMany(dataArray: Record<string, any>[]) {
+        if (dataArray.length === 0) return;
+        
+        const columns = Object.keys(dataArray[0]);
+        const placeholders = columns.map(() => '?').join(',');
+        const query = `INSERT INTO ${this.bindings.table.name} (${columns.join(',')}) VALUES (${placeholders})`;
+        
+        const results = [];
+        for (const data of dataArray) {
+            const values = columns.map(col => data[col]);
+            const result = await this.db.executeAsync(query, values);
+            results.push(result);
+        }
+        this.clear();
+        return results;
     }
 
-    public static async update(columns: string[], values: string[]) {
-        this.getInstance().bindings.column.push(...columns);
-        this.getInstance().bindings.values.push(...values);
+    public async update(columns: string[], values: string[]) {
+        this.bindings.column.push(...columns);
+        this.bindings.values.push(...values);
+        const params = this.bindings.values;
         const query = this.getQuery('update');
-        return await this.getInstance().db.executeAsync(query);
+        return await this.db.executeAsync(query, params);
     }
 
-    public static async delete() {
+    public async delete() {
+        const params = this.bindings.values;
         const query = this.getQuery('delete');
-        return await this.getInstance().db.executeAsync(query);
+        return await this.db.executeAsync(query, params);
     }
     
 
-    private static getQuery(type: 'select' | 'insert' | 'update' | 'delete'): string {
-        const { table, column, where, orderBy, limit, offset, groupBy, values } = this.getInstance().bindings;
+    private getQuery(type: 'select' | 'insert' | 'update' | 'delete'): string {
+        const { table, column, where, orderBy, limit, offset, groupBy, values } = this.bindings;
         let query = '';
         if (type === 'select') {
             query = 'SELECT';
@@ -139,7 +227,8 @@ class DB {
                 query += ` AS ${table.as}`;
             }
             if (column.length > 0) {
-                query += ` (${column.map(column => `${column} = ?`).join(',')})`;
+                const placeholders = column.map(() => '?').join(',');
+                query += ` (${column.join(',')}) VALUES (${placeholders})`;
             }
         } else if (type === 'update') {
             query = 'UPDATE';
@@ -163,8 +252,19 @@ class DB {
         }
         
         if (where.length > 0) {
-            query += ` WHERE ${where.map(where => `${where.column} ${where.operator} ${where.value}`).join(' AND ')}`;
+            const whereConditions = [];
+            for (const item of where) {
+                if (item.operator === 'IN') {
+                    whereConditions.push(`${item.column} IN (${item.value})`);
+                } else if (item.operator === 'NOT IN') {
+                    whereConditions.push(`${item.column} NOT IN (${item.value})`);
+                } else {    
+                    whereConditions.push(`${item.column} ${item.operator} ${item.value}`);
+                }
+            }
+            query += ` WHERE ${whereConditions.join(' AND ')}`;
         }
+
         if (orderBy.length > 0) {
             query += ` ORDER BY ${orderBy.map(orderBy => `${orderBy.column} ${orderBy.direction}`).join(',')}`;
         }
@@ -177,12 +277,17 @@ class DB {
         if (groupBy.length > 0) {
             query += ` GROUP BY ${groupBy.join(',')}`;
         }
+        if (DB.getInstance().log.enable) {
+            DB.logQuery(query, this.bindings.values);
+        }
         this.clear();
         return query;
     }
 
-    public static clear() {
-        this.getInstance().bindings = {
+   
+
+    public clear() {
+        this.bindings = {
             table: {
                 name: null,
                 as: null,
@@ -195,8 +300,8 @@ class DB {
             groupBy: [],
             values: [],
         };
-        return this.getInstance();
+        return this;
     }
 }
 
-export default DB.getInstance();
+export default DB;

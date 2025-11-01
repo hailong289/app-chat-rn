@@ -4,7 +4,6 @@ import React, {
   useEffect,
   ReactNode,
   useContext,
-  useCallback,
 } from 'react';
 import { open } from 'react-native-nitro-sqlite';
 
@@ -31,17 +30,21 @@ export const SQLiteContext = createContext<SQLiteContextType>({
 interface SQLiteProviderProps {
   children: ReactNode;
   dbName?: string;
+  schemaVersion?: number;
 }
+
+const CURRENT_SCHEMA_VERSION = 1;
 
 export const SQLiteProvider = ({ 
   children, 
-  dbName = 'AppChatRN.db'
+  dbName = 'AppChatRN.db',
+  schemaVersion = CURRENT_SCHEMA_VERSION
 }: SQLiteProviderProps) => {
   const [db, setDb] = useState<any | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
   /* Thực hiện câu lệnh SQL */
-  const executeSqlQuery = useCallback(async (
+  const executeSqlQuery = async (
     database: any,
     query: string,
     params: any[] = []
@@ -77,10 +80,66 @@ export const SQLiteProvider = ({
       console.error('SQL Error:', error);
       throw error;
     }
-  }, []);
+  };
+
+  /* Kiểm tra schema version */
+  const checkSchemaVersion = async (database: any): Promise<number> => {
+    try {
+      // Kiểm tra xem bảng schema_version đã tồn tại chưa
+      const result = await executeSqlQuery(database, `
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name='schema_version'
+      `);
+      
+      if (result.rows && result.rows.length > 0) {
+        // Bảng đã tồn tại, lấy version hiện tại
+        const versionResult = await executeSqlQuery(database, `
+          SELECT version FROM schema_version ORDER BY id DESC LIMIT 1
+        `);
+        if (versionResult.rows && versionResult.rows.length > 0) {
+          return versionResult.rows[0].version || 0;
+        }
+      }
+      return 0;
+    } catch (error) {
+      // Nếu có lỗi, trả về 0 để tạo lại schema
+      return 0;
+    }
+  };
+
+  /* Tạo bảng schema_version */
+  const createSchemaVersionTable = async (database: any) => {
+    try {
+      await executeSqlQuery(database, `
+        CREATE TABLE IF NOT EXISTS schema_version (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          version INTEGER NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+        )
+      `);
+      console.log('✅ Thành công tạo bảng schema_version');
+    } catch (error) {
+      console.error('❌ Lỗi tạo bảng schema_version:', error);
+      throw error;
+    }
+  };
+
+  /* Cập nhật schema version */
+  const updateSchemaVersion = async (database: any, version: number) => {
+    try {
+      await executeSqlQuery(database, `
+        INSERT INTO schema_version (version, created_at) 
+        VALUES (?, strftime('%s', 'now'))
+      `, [version]);
+      console.log(`✅ Đã cập nhật schema version: ${version}`);
+    } catch (error) {
+      console.error('❌ Lỗi cập nhật schema version:', error);
+      throw error;
+    }
+  };
 
   /* Tạo bảng rooms */
-  const createTableRoom = useCallback(async (database: any) => {
+  const createTableRoom = async (database: any) => {
     try {
       await executeSqlQuery(database, `
         CREATE TABLE IF NOT EXISTS rooms (
@@ -104,21 +163,38 @@ export const SQLiteProvider = ({
       console.error('❌ Lỗi tạo bảng rooms:', error);
       throw error;
     }
-  }, [executeSqlQuery]);
+  };
 
   /* Tạo các bảng cần thiết nếu chưa tồn tại */
-  const createTables = useCallback(async (database: any) => {
+  const createTables = async (database: any) => {
     try {
+      // Tạo bảng schema_version trước
+      await createSchemaVersionTable(database);
+      
+      // Kiểm tra version hiện tại
+      const currentVersion = await checkSchemaVersion(database);
+      
+      // Nếu version đã đúng thì không tạo lại
+      if (currentVersion >= schemaVersion) {
+        console.log(`✅ Database schema đã ở version ${currentVersion}, không cần tạo lại`);
+        return;
+      }
+      
+      // Tạo các bảng
       await createTableRoom(database);
-      console.log('✅ Thành công tạo các bảng cần thiết');
+      
+      // Cập nhật version sau khi tạo xong
+      await updateSchemaVersion(database, schemaVersion);
+      
+      console.log(`✅ Thành công tạo các bảng cần thiết (version ${schemaVersion})`);
     } catch (error) {
       console.error('❌ Lỗi tạo các bảng cần thiết:', error);
       throw error;
     }
-  }, [createTableRoom]);
+  };
 
   // Khởi tạo database
-  const initializeDatabase = useCallback(async () => {
+  const initializeDatabase = async () => {
     try {
       const database = open({
         name: dbName,
@@ -136,9 +212,9 @@ export const SQLiteProvider = ({
       console.error('❌ Lỗi khởi tạo database:', error);
       setIsInitialized(false);
     }
-  }, [dbName, createTables]);
+  };
 
-  const executeSql = useCallback(async (
+  const executeSql = async (
     query: string,
     params: any[] = []
   ): Promise<DatabaseResult> => {
@@ -146,9 +222,9 @@ export const SQLiteProvider = ({
       throw new Error('Database not initialized');
     }
     return executeSqlQuery(db, query, params);
-  }, [db, executeSqlQuery]);
+  };
 
-  const close = useCallback(async () => {
+  const close = async () => {
     try {
       if (db) {
         await db.close();
@@ -159,7 +235,7 @@ export const SQLiteProvider = ({
     } catch (error) {
       console.error('❌ Error closing database:', error);
     }
-  }, [db]);
+  };
 
   useEffect(() => {
     initializeDatabase();
@@ -167,7 +243,7 @@ export const SQLiteProvider = ({
     return () => {
       close();
     };
-  }, [initializeDatabase, close]);
+  }, []);
 
   const value: SQLiteContextType = {
     db,

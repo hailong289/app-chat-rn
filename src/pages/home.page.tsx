@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { ScrollView, TouchableOpacity, Image, Text, StatusBar, View } from 'react-native';
 import { Box } from '@/src/components/ui/box';
 import { HStack } from '@/src/components/ui/hstack';
@@ -8,6 +8,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Badge, BadgeIcon, BadgeText } from '../components/ui/badge';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { MainStackParamList } from '../navigations/MainStackNavigator';
+import useRoomStore from '../store/useRoom';
+
+type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 const stories = [
   { id: 'me', label: 'Trạng thái của tôi', avatar: 'https://avatar.iran.liara.run/public' },
@@ -73,7 +78,26 @@ const Avatar = ({ src }: { src: any }) => (
 const HomePage = () => {
   const insets = useSafeAreaInsets();
   const backgroundColor = '#42A59F';
-  const navigation = useNavigation();
+  const navigation = useNavigation<NavigationProp>();
+  const { rooms, getRooms, isLoading } = useRoomStore();
+  useEffect(() => {
+    getRooms({
+      limit: 10,
+      offset: 0,
+      type: 'private',
+      success: () => {
+        console.log('success');
+      },
+      error: (error) => {
+        console.log('error', error);
+      },
+    });
+  }, []);
+
+  const handleNavigateToChat = (roomId: string) => {
+    navigation.navigate('Chat', { roomId });
+  }
+
   return (
     <SafeAreaView className='flex-1 bg-white' edges={['top']}>
       <View
@@ -110,26 +134,30 @@ const HomePage = () => {
 
         <HStack className="items-center justify-between mb-4 px-5">
           <Text className="text-[20px] font-bold text-typography-950">Tin nhắn (10)</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Search' as never)}>
+          <TouchableOpacity onPress={() => navigation.navigate('Search')}>
             <FontAwesome name="search" className="text-secondary-500" size={16}  />
           </TouchableOpacity>
         </HStack>
 
         <ScrollView>
-          {messages.map((m) => (
-            <TouchableOpacity className="py-4 border-b border-gray-200" key={Math.random().toString(36).substring(7)}>
-              <HStack className="items-center justify-between px-5">
+          {rooms.map((item) => (
+            <TouchableOpacity 
+              className="py-4 border-b border-gray-200" 
+              key={item.id}
+              onPress={() => handleNavigateToChat(item.id)}
+            >
+              <HStack className="items-center justify-between px-5" >
                 <HStack className="items-center">
-                  <Image source={{ uri: 'https://avatar.iran.liara.run/public' }} style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }} />
+                  <Image source={{ uri: item.avatar || 'https://avatar.iran.liara.run/public' }} style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }} />
                   <VStack>
-                    <Text className="font-bold text-typography-950 text-[16px]">{m.name}</Text>
-                    <Text className="text-gray-400 text-[14px]">{m.text}</Text>
+                    <Text className="font-bold text-typography-950 text-[16px]">{item.name}</Text>
+                    <Text className="text-gray-400 text-[14px]">{item.last_message?.text}</Text>
                   </VStack>
                 </HStack>
                 <HStack className="items-center">
-                  <Text className="text-gray-400 text-[12px] mr-4">{m.time}</Text>
+                  <Text className="text-gray-400 text-[12px] mr-4">{item.last_message?.createdAt}</Text>
                   <Badge variant="solid" className='bg-red-600 rounded-full'>
-                    <BadgeText className='text-white'>2</BadgeText>
+                    <BadgeText className='text-white'>{item.unread_count}</BadgeText>
                   </Badge>
                 </HStack>
               </HStack>

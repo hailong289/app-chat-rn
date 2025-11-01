@@ -1,9 +1,9 @@
 import apiService from "./api.service";
-import { PayloadGetRooms } from "../types/room.type";
+import { PayloadGetRooms, PayloadGetRoomsCallback } from "../types/room.type";
 
 
 export default class RoomService {
-    public static async getRooms(payload: PayloadGetRooms) {
-        return await apiService.get('/rooms', payload);
+    public static async getRooms(payload: Omit<PayloadGetRooms, 'success' | 'error'>) {
+        return await apiService.get('/chat/rooms', payload);
     }
 }
