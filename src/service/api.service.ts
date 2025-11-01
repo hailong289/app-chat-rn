@@ -36,15 +36,17 @@ class ApiService {
             if (accessToken) {
                 config.headers["Authorization"] = `Bearer ${accessToken}`;
             }
-            console.log('Request Config:', config, accessToken);
+            console.log('Request:', config);
             return config;
         });
 
         this.axiosInstance.interceptors.response.use(
             (response) => {
+                console.log('Response:', response);
                 return response;
             },
             (error) => {
+                console.error('Response:', error);
                 const statusCode = error.response?.status || 500;
                 const reasonStatusCode = error.response?.statusText || "Internal Server Error";
                 const responseData = error.response?.data;
@@ -143,7 +145,6 @@ class ApiService {
 
     private getTokens = async () => {
         const tokens = useAuthStore.getState().tokens;
-        console.log('Tokens:', tokens,useAuthStore.getState());
         return {
             accessToken: tokens?.accessToken || null,
             refreshToken: tokens?.refreshToken || null,

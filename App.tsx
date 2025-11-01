@@ -17,6 +17,7 @@ import '@/global.css';
 import ToastManager from 'toastify-react-native'
 import { FirebaseProvider } from './src/providers/firebase.provider';
 import { SQLiteProvider } from './src/providers/sqlite.provider';
+import { SocketProvider } from './src/providers/socket.provider';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -26,8 +27,10 @@ function App() {
       <SafeAreaProvider>
         <FirebaseProvider>
           <SQLiteProvider>
-            <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-            <AppNavigator />
+            <SocketProvider>
+              <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+              <AppNavigator />
+            </SocketProvider>
           </SQLiteProvider>
           <ToastManager />
         </FirebaseProvider>
