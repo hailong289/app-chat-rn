@@ -63,7 +63,7 @@ const SettingsPage = () => {
         ))}
         <Button
           className="mt-4 rounded-[20px] h-[50px] bg-error-500"
-          variant="negative"
+          // variant="negative"
           onPress={handleLogout}
           // isDisabled={isLoading}
         >

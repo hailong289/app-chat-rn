@@ -3,11 +3,16 @@ import HomePage from "../pages/home.page";
 import AboutPage from "../pages/about.page";
 import { FontAwesome } from "@react-native-vector-icons/fontawesome";
 import SettingsPage from "../pages/settings.page";
+import NotificationPage from "../pages/notification.page";
+import ContactPage from "../pages/contact/contact.page";
+import HeaderComponent from "../components/headers/headers.component";
+import HeaderSearchComponent from "../components/headers/headers-search.component";
 
 export type MainTabParamList = {
     Home: undefined;
-    About: undefined;
     SettingsPage: undefined;
+    Notification: undefined;
+    Contact: undefined;
 };
 
 
@@ -15,7 +20,6 @@ const MainTab = createBottomTabNavigator<MainTabParamList>();
 
 // Main tab navigator
 const MainNavigator = () => (
-
     <MainTab.Navigator
         screenOptions={{
             tabBarStyle: {
@@ -52,18 +56,45 @@ const MainNavigator = () => (
                 tabBarLabel: 'Trang chủ',
             }} />
         <MainTab.Screen
-            name="About" component={AboutPage}
+            name="Contact" component={ContactPage}
             options={{
-                tabBarIcon: ({ color, size }) => <FontAwesome name="info" size={size} color={color} />,
-                tabBarLabel: 'Giới thiệu',
+                header(props) {
+                    return <HeaderSearchComponent 
+                    rightIcon="user-plus"
+                    onRightPress={() => {
+                        props.navigation.navigate('AddContact');
+                    }}
+                    searchPlaceholder="Tìm kiếm người dùng..."
+                    autoFocus={true}
+                    backgroundColor="#42A59F"
+                    statusBarStyle="light-content"
+                    height={60}
+                    searchHeight={44}
+                    showStatusBar={true}
+                    className=""
+                    searchInputClassName="text-gray-700 text-[16px]"
+                    {...props} />
+                },
+                tabBarIcon: ({ color, size }) => <FontAwesome name="users" size={size} color={color} />,
+                tabBarLabel: 'Danh bạ',
+            }} />
+        <MainTab.Screen
+            name="Notification" component={NotificationPage}
+            options={{
+                headerShown: false,
+                tabBarIcon: ({ color, size }) => <FontAwesome name="bell" size={size} color={color} />,
+                tabBarLabel: 'Thông báo',
             }} />
         <MainTab.Screen
             name="SettingsPage" component={SettingsPage}
             options={{
-                headerTitle: 'Cài đặt',
+                header(props) {
+                    return <HeaderComponent title="Cài đặt" {...props} />
+                },
                 tabBarIcon: ({ color, size }) => <FontAwesome name="cog" size={size} color={color} />,
                 tabBarLabel: 'Cài đặt',
             }} />
+        
     </MainTab.Navigator>
 );
 

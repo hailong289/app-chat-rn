@@ -31,6 +31,7 @@ export const FirebaseProvider = ({ children }: { children: ReactNode }) => {
         // Lắng nghe thông báo foreground
         const unsubscribeMessage = messaging().onMessage(async remoteMessage => {
           const { title, body } = remoteMessage.notification || {};
+          console.log('📩 Foreground message:', remoteMessage);
           await notifee.displayNotification({
             title: title || 'Thông báo',
             body: body || '',

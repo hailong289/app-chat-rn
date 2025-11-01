@@ -7,6 +7,7 @@ import { Icon, SearchIcon } from '@/src/components/ui/icon';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Badge, BadgeIcon, BadgeText } from '../components/ui/badge';
+import { useNavigation } from '@react-navigation/native';
 
 const stories = [
   { id: 'me', label: 'Trạng thái của tôi', avatar: 'https://avatar.iran.liara.run/public' },
@@ -72,6 +73,7 @@ const Avatar = ({ src }: { src: any }) => (
 const HomePage = () => {
   const insets = useSafeAreaInsets();
   const backgroundColor = '#42A59F';
+  const navigation = useNavigation();
   return (
     <SafeAreaView className='flex-1 bg-white' edges={['top']}>
       <View
@@ -93,7 +95,7 @@ const HomePage = () => {
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4 px-5">
           {stories.map((s) => (
-            <Box className="items-center mr-4" style={{ width: 64 }} key={s.id}>
+            <Box className="items-center mr-4" style={{ width: 64 }} key={Math.random().toString(36).substring(7)}>
               <Image source={{ uri: s.avatar }} style={{ width: 64, height: 64, borderRadius: 32 }} />
               <Text
                 className="text-[13px] text-gray-400 mt-2 text-center"
@@ -108,14 +110,14 @@ const HomePage = () => {
 
         <HStack className="items-center justify-between mb-4 px-5">
           <Text className="text-[20px] font-bold text-typography-950">Tin nhắn (10)</Text>
-          <TouchableOpacity>
-            <FontAwesome name="search" className="text-secondary-500" size={16} />
+          <TouchableOpacity onPress={() => navigation.navigate('Search' as never)}>
+            <FontAwesome name="search" className="text-secondary-500" size={16}  />
           </TouchableOpacity>
         </HStack>
 
         <ScrollView>
           {messages.map((m) => (
-            <TouchableOpacity className="py-4 border-b border-gray-200">
+            <TouchableOpacity className="py-4 border-b border-gray-200" key={Math.random().toString(36).substring(7)}>
               <HStack className="items-center justify-between px-5">
                 <HStack className="items-center">
                   <Image source={{ uri: 'https://avatar.iran.liara.run/public' }} style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }} />

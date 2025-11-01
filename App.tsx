@@ -16,6 +16,7 @@ import { GluestackUIProvider } from '@/src/components/ui/gluestack-ui-provider';
 import '@/global.css';
 import ToastManager from 'toastify-react-native'
 import { FirebaseProvider } from './src/providers/firebase.provider';
+import { SQLiteProvider } from './src/providers/sqlite.provider';
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
@@ -24,9 +25,10 @@ function App() {
     <GluestackUIProvider mode="dark" >
       <SafeAreaProvider>
         <FirebaseProvider>
-          <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-          {/* <AppContent /> */}
-          <AppNavigator />
+          <SQLiteProvider>
+            <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+            <AppNavigator />
+          </SQLiteProvider>
           <ToastManager />
         </FirebaseProvider>
       </SafeAreaProvider>
