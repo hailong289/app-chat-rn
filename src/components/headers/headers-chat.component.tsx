@@ -91,7 +91,7 @@ const HeaderChatComponent: React.FC<StackHeaderProps> = (props) => {
           </Box>
 
           {/* Right Section */}
-          <Box className="flex-row items-center" style={{ minWidth: 40 }}>
+          <Box className="flex-row items-center gap-2" style={{ minWidth: 40 }}>
             <TouchableOpacity
               onPress={() => {
                 // TODO: Handle phone call
@@ -100,6 +100,15 @@ const HeaderChatComponent: React.FC<StackHeaderProps> = (props) => {
               style={{ padding: 4 }}
             >
               <FontAwesome name="phone" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                // TODO: Handle video call
+              }}
+              activeOpacity={0.7}
+              style={{ padding: 4 }}
+            >
+              <FontAwesome name="video-camera" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </Box>
         </HStack>

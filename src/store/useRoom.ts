@@ -3,17 +3,18 @@ import RoomService from "../service/room.service";
 import { Room, PayloadGetRooms, PayloadGetRoomsCallback, PayloadGetRoomsSuccess } from "../types/room.type";
 import ApiResponse from "../types/response.type";
 import DB from "../libs/db";
+import db from "../libs/db";
 
 interface RoomState {
     rooms: Room[];
     room: Room | null;
     isLoading: boolean;
     total: number;
-    offset: number;
     type: 'private' | 'group';
     getRooms: (payload: PayloadGetRooms & PayloadGetRoomsCallback) => Promise<void>;
+    getRoomsByType: (type: string, limit: number, offset: number) => Promise<Room[]>;
     addRoom: (room: Room) => void;
-    updateRoom: (roomId: string, updates: Partial<Room>) => void;
+    upsertRoom: (data: Room) => Promise<void>;
     removeRoom: (roomId: string) => void;
     clearRooms: () => void;
 }
@@ -24,7 +25,6 @@ const useRoomStore = create<RoomState>()(
         room: null,
         isLoading: false,
         total: 0,
-        offset: 0,
         type: 'private',
         getRooms: async (payload) => {
             set({ isLoading: true });
@@ -41,92 +41,89 @@ const useRoomStore = create<RoomState>()(
                 const metadata = responseData?.metadata as Room[];
                 if (metadata && metadata.length > 0) {
                     set({
-                        rooms: metadata,
-                        offset: payload.offset,
-                        type: payload.type,
-                    });
-                    const roomIds = metadata.map((room) => room.id);
-                    for (const room of metadata) {
-                        const roomExists = await DB.getInstance()
-                            .setTable('rooms')
-                            .select(['id'])
-                            .where('id', '=', room.id).exists();
-                        // Nếu phòng đã tồn tại trong db thì bỏ qua
-                        if (roomExists) {
-                            continue;
-                        }
-                        console.log('room', room);
-                        if (!room.roomId) {
-                            continue;
-                        }
-                        await DB.getInstance().setTable('rooms').insert({
-                            id: room.id,
-                            roomId: room.roomId,
-                            updatedAt: new Date(room.updatedAt).getTime(),
-                            type: room.type,
-                            last_message: room.last_message ? JSON.stringify(room.last_message) : null,
-                            name: room.name,
-                            is_read: room.is_read ? 1 : 0,
-                            avatar: room.avatar || null,
-                            members: room.members ? JSON.stringify(room.members) : null,
-                            unread_count: typeof room.unread_count === 'string' ? parseInt(room.unread_count) : room.unread_count,
-                            pinned: room.pinned ? 1 : 0,
-                            muted: room.muted ? 1 : 0,
-                            created_at: Date.now(),
-                        });
-                    }
-                }
-                
-                payload.success();
-            } catch (error) {
-                // Nếu lỗi 500, lấy dữ liệu từ db
-                if((error as any).status === 500) {
-                    const rooms = await DB.getInstance()
-                    .setTable('rooms')
-                    .select(['*'])
-                    .where('type', '=', payload.type)
-                    .limit(payload.limit)
-                    .offset(payload.offset)
-                    .get();
-                    set({
-                        rooms: (rooms as unknown as Room[]),
-                        offset: payload.offset,
+                        rooms: metadata as Room[],
                         type: payload.type,
                         isLoading: false,
                     });
-                    payload.error(error);
-                } else {
-                    set({ isLoading: false });
-                    payload.error(error);
+                    await Promise.all(metadata.map(async (room) => {
+                        await db.setTable('rooms').upsert(room);
+                    }));
                 }
+                payload.success();
+            } catch (error) {
+                // Nếu lỗi, lấy dữ liệu từ db
+                // const rooms = await db
+                // .setTable('rooms')
+                // .select(['*'])
+                // .where('type', '=', payload.type)
+                // .limit(payload.limit)
+                // .offset(payload.offset)
+                // .get();
+                // set({
+                //     rooms: (rooms as unknown as Room[]),
+                //     isLoading: false,
+                // });
+                payload.error(error);
             }
+        },
+        getRoomsByType: async (type: string, limit: number, offset: number) => {
+            let rooms;
+            const query = db.setTable('rooms').select(['*']).limit(limit).offset(offset);
+            if (type == "all") {
+              rooms = await query.get() as unknown as Room[];
+            } else {
+              rooms = await query.where('type', '=', type).get() as unknown as Room[];
+            }
+            set({
+              rooms: (rooms || []).sort((a: Room, b: Room) =>
+                new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+              ) as Room[],
+            });
+            console.log('rooms2', JSON.parse(JSON.stringify(rooms)));
+            return rooms;
         },
         addRoom: (room) => {
             set((state) => ({
                 rooms: [room, ...state.rooms],
             }));
         },
-        updateRoom: (roomId, updates) => {
-            set((state) => ({
-                rooms: state.rooms.map((room) =>
-                    room.roomId === roomId || room.id === roomId
-                        ? { ...room, ...updates }
-                        : room
-                ),
-            }));
+        upsertRoom: async (room: Room) => {
+            db.enableLog(true);
+            try {
+                const roomDB = await db.setTable('rooms').where('id', '=', room.id).getOne() as unknown as Room;
+                if (roomDB) {
+                    // cập nhật room trong state
+                    set((state) => ({
+                        rooms: state.rooms.map((r) => r.id === room.id ? room : r),
+                    }));
+                    // cập nhật room trong db
+                    await db.setTable('rooms').where('id', '=', room.id).update({
+                        ...room,
+                        updatedAt: Date.now(),
+                    });
+                    return;
+                }
+                await db.setTable('rooms').insert(room);
+                // Thêm room vào state
+                set((state) => ({
+                    rooms: [room, ...state.rooms],
+                }));
+            } catch (error) {
+                console.error("Error upserting room:", error);
+                // Nếu lỗi, lấy dữ liệu từ api
+                get().getRoomsByType(room.type, 50, 0);
+            } finally {
+                console.log("upsertRoom success", db.getLog());
+            }
         },
-        removeRoom: (roomId) => {
-            set((state) => ({
-                rooms: state.rooms.filter(
-                    (room) => room.roomId !== roomId && room.id !== roomId
-                ),
-            }));
+        removeRoom: async (roomId) => {
+            await db.setTable('rooms').where('roomId', '=', roomId).delete();
+            get().getRoomsByType(get().type, 50, 0);
         },
         clearRooms: () => {
             set({
                 rooms: [],
                 total: 0,
-                offset: 0,
                 type: 'private',
             });
         },

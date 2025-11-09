@@ -107,6 +107,9 @@ const useAuthStore = create<AuthState>()(
                     set({ isLoading: false });
                 }
             },
+            clearStorage: async () => {
+                set({ isAuthenticated: false, isLoading: false, user: null, tokens: null });
+            }
         }),
         {
             name: 'auth', // key trong AsyncStorage

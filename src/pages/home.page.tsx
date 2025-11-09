@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, TouchableOpacity, Image, Text, StatusBar, View } from 'react-native';
 import { Box } from '@/src/components/ui/box';
 import { HStack } from '@/src/components/ui/hstack';
@@ -11,6 +11,8 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '../navigations/MainStackNavigator';
 import useRoomStore from '../store/useRoom';
+import Helpers from '../libs/helpers';
+import { RefreshControl } from 'react-native';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -80,6 +82,8 @@ const HomePage = () => {
   const backgroundColor = '#42A59F';
   const navigation = useNavigation<NavigationProp>();
   const { rooms, getRooms, isLoading } = useRoomStore();
+  const [refreshing, setRefreshing] = useState(false);
+
   useEffect(() => {
     getRooms({
       limit: 10,
@@ -94,9 +98,32 @@ const HomePage = () => {
     });
   }, []);
 
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await getRooms({
+        limit: 10,
+        offset: 0,
+        type: 'private',
+        success: () => {
+          console.log('refresh success');
+          setRefreshing(false);
+        },
+        error: (error) => {
+          console.log('refresh error', error);
+          setRefreshing(false);
+        },
+      });
+    } catch (error) {
+      setRefreshing(false);
+    }
+  };
+
   const handleNavigateToChat = (roomId: string) => {
     navigation.navigate('Chat', { roomId });
   }
+
+  console.log('rooms', rooms);
 
   return (
     <SafeAreaView className='flex-1 bg-white' edges={['top']}>
@@ -110,7 +137,12 @@ const HomePage = () => {
           right: 0,
         }}
       />
-      <ScrollView contentContainerStyle={{ paddingBottom: 20, paddingTop: 20 }}>
+      <ScrollView 
+        contentContainerStyle={{ paddingBottom: 20, paddingTop: 20 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
         <HStack className="items-center justify-between mb-4 px-5">
           <Box>
             <Text className="text-[20px] font-bold text-typography-950">Hoạt động</Text>
@@ -147,19 +179,25 @@ const HomePage = () => {
               onPress={() => handleNavigateToChat(item.id)}
             >
               <HStack className="items-center justify-between px-5" >
-                <HStack className="items-center">
+                <HStack className="items-center flex-1 mr-2">
                   <Image source={{ uri: item.avatar || 'https://avatar.iran.liara.run/public' }} style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }} />
-                  <VStack>
+                  <VStack className="flex-1">
                     <Text className="font-bold text-typography-950 text-[16px]">{item.name}</Text>
-                    <Text className="text-gray-400 text-[14px]">{item.last_message?.text}</Text>
+                    <Text 
+                      className="text-gray-400 text-[14px]" 
+                      numberOfLines={2}
+                      ellipsizeMode="tail"
+                    >
+                      {item.last_message?.content}
+                    </Text>
                   </VStack>
                 </HStack>
-                <HStack className="items-center">
-                  <Text className="text-gray-400 text-[12px] mr-4">{item.last_message?.createdAt}</Text>
-                  <Badge variant="solid" className='bg-red-600 rounded-full'>
+                <VStack className="items-end">
+                  <Badge variant="solid" className='bg-red-600 rounded-full mb-1'>
                     <BadgeText className='text-white'>{item.unread_count}</BadgeText>
                   </Badge>
-                </HStack>
+                  <Text className="text-gray-400 text-[12px]">{item.last_message?.createdAt ? Helpers.formatTimeAgo(item.last_message?.createdAt) : ''}</Text>
+                </VStack>
               </HStack>
             </TouchableOpacity>
           ))}

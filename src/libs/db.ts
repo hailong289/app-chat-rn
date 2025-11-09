@@ -24,8 +24,10 @@ class DB {
         values: [] as string[],
     };
     private log = {
-        query: '',
-        params: [] as any[],
+        logs: [] as {
+            query: string;
+            params: any[];
+        }[],
         enable: false,
     }
 
@@ -48,27 +50,29 @@ class DB {
         return DB.instance;
     }
 
-    public static enableLog(enable: boolean) {
-        DB.getInstance().log.enable = enable;
+    public enableLog(enable: boolean) {
+        this.log.enable = enable;
         return this;
     }
 
-    public static logQuery(query: string, params: any[]) {
-        DB.getInstance().log.query = query;
-        DB.getInstance().log.params = params;
+    public logQuery(query: string, params: any[]) {
+        this.log.logs.push({ query, params });
         return this;
     }
 
-    public static getLog() {
-        return DB.getInstance().log;
+    public getLog() {
+        return this.log.logs;
     }
 
-    public static getLogRaw() {
-        const { query, params } = DB.getInstance().log;
-        let queryRaw = query;
-        for (const param of params) {
-            queryRaw = queryRaw.replace('?', typeof param === 'string' ? `'${param}'` : param?.toString() ?? '');
-        }
+    public getLogRaw() {
+        const { logs } = DB.getInstance().log;
+        const queryRaw = logs.map((log) => {
+            let query = log.query;
+            for (const param of log.params) {
+                query = query.replace('?', typeof param === 'string' ? `'${param}'` : param?.toString() ?? '');
+            }
+            return query;
+        });
         return queryRaw;
     }
 
@@ -161,7 +165,7 @@ class DB {
 
     public async insert(data: Record<string, any>) {
         const columns = Object.keys(data);
-        const values = Object.values(data);
+        const values = Object.values(data).map((value) => this.convertValue(value));
         this.bindings.column.push(...columns);
         this.bindings.values.push(...values);
         const params = this.bindings.values;
@@ -179,7 +183,7 @@ class DB {
         
         const results = [];
         for (const data of dataArray) {
-            const values = columns.map(col => data[col]);
+            const values = columns.map(col => this.convertValue(data[col]));
             const result = await this.db.executeAsync(query, values);
             results.push(result);
         }
@@ -187,12 +191,37 @@ class DB {
         return results;
     }
 
-    public async update(columns: string[], values: string[]) {
+    public async update(data: Record<string, any>) {
+        const columns = Object.keys(data);
+        const values = Object.values(data).map((value) => this.convertValue(value));
         this.bindings.column.push(...columns);
         this.bindings.values.push(...values);
         const params = this.bindings.values;
         const query = this.getQuery('update');
         return await this.db.executeAsync(query, params);
+    }
+
+    public async upsert(data: Record<string, any>) {
+        const params = JSON.parse(JSON.stringify(data));
+        // Lưu table name trước khi clear
+        const tableName = this.bindings.table.name;
+        if (!tableName) {
+            throw new Error('Table name is required for upsert operation');
+        }
+        
+        // Kiểm tra record có tồn tại không
+        const result = await this.setTable(tableName).where('id', '=', params.id).exists();
+        
+        // Set lại table name và where condition cho update
+        if (result) {
+            this.setTable(tableName).where('id', '=', params.id);
+            delete params.id;
+            return await this.update(params);
+        }
+        
+        // Set lại table name cho insert
+        this.setTable(tableName);
+        return await this.insert(params);
     }
 
     public async delete() {
@@ -202,7 +231,7 @@ class DB {
     }
     
 
-    private getQuery(type: 'select' | 'insert' | 'update' | 'delete'): string {
+    private getQuery(type: 'select' | 'insert' | 'update' | 'delete' | 'upsert'): string {
         const { table, column, where, orderBy, limit, offset, groupBy, values } = this.bindings;
         let query = '';
         if (type === 'select') {
@@ -249,6 +278,18 @@ class DB {
             if (table.as) {
                 query += ` AS ${table.as}`;
             }
+
+        } else if (type === 'upsert') {
+            query = 'INSERT OR REPLACE INTO';
+            if (table.name) {
+                query += ` ${table.name}`;
+            }
+            if (table.as) {
+                query += ` AS ${table.as}`;
+            }
+            if (column.length > 0) {
+                query += ` (${column.join(',')}) VALUES (${column.map(() => '?').join(',')})`;
+            }
         }
         
         if (where.length > 0) {
@@ -277,14 +318,51 @@ class DB {
         if (groupBy.length > 0) {
             query += ` GROUP BY ${groupBy.join(',')}`;
         }
-        if (DB.getInstance().log.enable) {
-            DB.logQuery(query, this.bindings.values);
+        if (this.log.enable) {
+            this.logQuery(query, this.bindings.values);
+
         }
         this.clear();
         return query;
     }
 
-   
+
+    private convertValue(value: any) {
+        if (value === null || value === undefined) {
+            return null;
+        }
+        if (typeof value === 'string') {
+            return value;
+        }
+        if (typeof value === 'object') {   
+            return JSON.stringify(value);
+        }
+        if (Array.isArray(value)) {
+            return JSON.stringify(value);
+        }
+        if (typeof value === 'boolean') {
+            return value ? 1 : 0;
+        }
+        if (typeof value === 'number') {
+            return value;
+        }
+        if (value instanceof Date) {
+            return value.toISOString();
+        }
+        if (typeof value === 'function') {
+            return value.toString();
+        }
+        if (typeof value === 'symbol') {
+            return value.description;
+        }
+        if (typeof value === 'bigint') {
+            return value.toString() as string;
+        }
+        if (typeof value === 'undefined') {
+            return null;
+        }
+        return value;
+    }
 
     public clear() {
         this.bindings = {
@@ -304,4 +382,4 @@ class DB {
     }
 }
 
-export default DB;
+export default DB.getInstance();

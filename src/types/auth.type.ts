@@ -87,4 +87,5 @@ export interface AuthState {
     forgotPassword: (payload: PayloadForgotPassword) => Promise<void>;
     verifyOtp: (payload: PayloadVerifyOtp) => Promise<void>;
     resetPassword: (payload: PayloadResetPassword) => Promise<void>;
+    clearStorage: () => Promise<void>;
 }

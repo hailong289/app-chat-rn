@@ -18,19 +18,33 @@ export interface LastMessage {
 }
 
 export interface Room {
-    id: string;
+    id: string; // Primary key - must not be null
     roomId: string;
+    type: "group" | "private" | "channel";
+    name: string | null;
+    avatar: string | null;
+    members: RoomMembers[];
     updatedAt: string;
-    type: 'private' | 'group';
-    last_message?: LastMessage | null;
-    name: string;
+    last_message: {
+      id: string | null;
+      content: string | null;
+      createdAt: string | null;
+      sender_fullname: string | null;
+      sender_id: string | null;
+    };
     is_read: boolean;
-    avatar?: string | null;
-    members?: RoomMember[];
-    unread_count: string | number;
+    unread_count: number;
     pinned: boolean;
     muted: boolean;
+    last_read_id: string | null;
 }
+
+export type RoomMembers = {
+    id: string;
+    name: string | null;
+    role: string | null;
+    avatar: string | null;
+};
 
 export interface PayloadGetRoomsSuccess {
     rooms: Room[];

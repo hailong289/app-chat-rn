@@ -50,6 +50,15 @@ class ApiService {
                 const statusCode = error.response?.status || 500;
                 const reasonStatusCode = error.response?.statusText || "Internal Server Error";
                 const responseData = error.response?.data;
+                if (statusCode === 401) {
+                    useAuthStore.getState().logout({
+                        success: () => {},
+                        error: (error) => {
+                            // Lỗi thuộc về token hết hạn
+                            useAuthStore.getState().clearStorage();
+                        }
+                    });
+                }
                 return Promise.reject({
                     statusCode,
                     reasonStatusCode,
@@ -91,27 +100,27 @@ class ApiService {
         return await this.axiosInstance.delete<T>(url, { data });
     }
 
-    public async withTimeout<T>(timeoutMs: number) {
+    public withTimeout<T>(timeoutMs: number) {
         this.axiosInstance.defaults.timeout = timeoutMs;
         return this;
     }
 
-    public async setHeader(key: string, value: string) {
+    public setHeader(key: string, value: string) {
         this.axiosInstance.defaults.headers.common[key] = value;
         return this;
     }
 
-    public async removeHeader(key: string) {
+    public removeHeader(key: string) {
         delete this.axiosInstance.defaults.headers.common[key];
         return this;
     }
 
-    public async setAuthorization(token: string) {
+    public setAuthorization(token: string) {
         this.axiosInstance.defaults.headers.common["Authorization"] = `Bearer ${token}`;
         return this;
     }
 
-    public async setBaseURL(url: string) {
+    public setBaseURL(url: string) {
         this.axiosInstance.defaults.baseURL = url;
         return this;
     }

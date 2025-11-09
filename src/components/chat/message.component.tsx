@@ -1,5 +1,7 @@
+import { MessageType } from '@/src/types/message.type';
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Image } from 'react-native';
+import { HStack } from '../ui/hstack';
 
 export interface Message {
   id: string;
@@ -10,7 +12,7 @@ export interface Message {
 }
 
 interface MessageItemProps {
-  item: Message;
+  item: MessageType;
 }
 
 const formatTime = (dateString: string): string => {
@@ -23,30 +25,44 @@ const formatTime = (dateString: string): string => {
 const MessageItem: React.FC<MessageItemProps> = ({ item }) => {
   return (
     <View
-      className={`mb-4 px-4 ${item.isMe ? 'items-end' : 'items-start'}`}
+      className={`mb-4 ${item.isMine ? 'items-end' : 'items-start'}`}
     >
-      <View
-        className={`max-w-[75%] rounded-2xl px-4 py-2 ${
-          item.isMe
-            ? 'bg-primary-500 rounded-tr-sm'
-            : 'bg-gray-200 rounded-tl-sm'
-        }`}
-      >
-        <Text
-          className={`text-sm ${
-            item.isMe ? 'text-white' : 'text-typography-950'
+      <HStack className="items-center">
+        {!item.isMine && item.sender.avatar && (
+          <Image 
+            source={{ uri: item.sender.avatar }} 
+            className="w-6 h-6 rounded-full mt-[-30px] mx-2"
+           />
+        )}
+        <View
+          className={`max-w-[75%] rounded-2xl px-4 py-2 ${
+            item.isMine
+              ? 'bg-primary-500 rounded-tr-sm'
+              : 'bg-gray-200 rounded-tl-sm'
           }`}
         >
-          {item.text}
-        </Text>
-        <Text
-          className={`text-xs mt-1 ${
-            item.isMe ? 'text-primary-100' : 'text-gray-500'
-          }`}
-        >
-          {formatTime(item.createdAt)}
-        </Text>
-      </View>
+          <Text
+            className={`text-sm ${
+              item.isMine ? 'text-white' : 'text-typography-950'
+            }`}
+          >
+            {item.content}
+          </Text>
+          <Text
+            className={`text-xs mt-1 ${
+              item.isMine ? 'text-white' : 'text-typography-500'
+            }`}
+          >
+            {formatTime(item.createdAt)}
+          </Text>
+        </View>
+        {item.isMine && item.sender.avatar && (
+          <Image 
+            source={{ uri: item.sender.avatar }} 
+            className="w-6 h-6 rounded-full mt-[-30px] mx-2"
+           />
+        )}
+      </HStack>
     </View>
   );
 };

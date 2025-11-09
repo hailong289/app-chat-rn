@@ -6,74 +6,62 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRoute } from '@react-navigation/native';
 import { Box } from '@/src/components/ui/box';
-import { HStack } from '@/src/components/ui/hstack';
 import { Input, InputField } from '@/src/components/ui/input';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
-import useRoomStore from '../store/useRoom';
 import MessageItem, { Message } from '../components/chat/message.component';
+import { useSocket } from '../providers/socket.provider';
+import useMessageStore from '../store/useMessage';
+import useAuthStore from '../store/useAuth';
 
 const ChatPage: React.FC = () => {
   const route = useRoute();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList>(null);
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
-  const { roomId } = (route.params as { roomId?: string }) || {};
+  const { roomId } = (route.params as { roomId: string }) || {};
   const [showMoreOptions, setShowMoreOptions] = useState(false);
-
+  const { socket } = useSocket();
+  const { sendMessage, isLoading: msgLoading, messagesRoom, getMessages } = useMessageStore();
+  const { user } = useAuthStore();
 
   useEffect(() => {
     // Load messages from API hoặc database
     // Tạm thời dùng mock data
-    const mockMessages: Message[] = [
-      {
-        id: '1',
-        text: 'Hello! How are you?',
-        userId: 'user1',
-        createdAt: new Date().toISOString(),
-        isMe: false,
-      },
-      {
-        id: '2',
-        text: "I'm doing great, thanks for asking!",
-        userId: 'user2',
-        createdAt: new Date().toISOString(),
-        isMe: true,
-      },
-    ];
-    setMessages(mockMessages);
+    getMessages(roomId);
   }, [roomId]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
-    if (messages.length > 0) {
+    if (messagesRoom[roomId]?.messages.length > 0) {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
       }, 100);
     }
-  }, [messages]);
+  }, [messagesRoom, roomId]);
 
   const handleSend = () => {
     if (!message.trim()) return;
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      text: message.trim(),
-      userId: 'currentUser',
-      createdAt: new Date().toISOString(),
-      isMe: true,
-    };
-
-    setMessages((prev) => [...prev, newMessage]);
+    sendMessage({
+      roomId: roomId,
+      content: message,
+      attachments: [], // Tạm thời để rỗng, sẽ xử lý upload sau
+      type: 'text',
+      socket,
+      userId: user?.id,
+      userFullname: user?.fullname,
+      userAvatar: user?.avatar,
+    });
     setMessage('');
   };
 
   return (
-   <KeyboardAvoidingView
+    <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
@@ -82,7 +70,7 @@ const ChatPage: React.FC = () => {
         {/* Messages List */}
         <FlatList
           ref={flatListRef}
-          data={messages}
+          data={messagesRoom[roomId]?.messages || []}
           renderItem={({ item }) => <MessageItem item={item} />}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingVertical: 16 }}
@@ -96,17 +84,57 @@ const ChatPage: React.FC = () => {
           }
         />
 
+        {/* Media Options */}
+        {showMoreOptions && (
+          <View className="bg-gray-100 px-4">
+            <View className="bg-white rounded-full flex-row items-center justify-around py-4">
+              <TouchableOpacity
+                className="items-center justify-center gap-1 flex-1"
+                onPress={() => {
+                  // TODO: Handle camera
+                }}
+              >
+                <FontAwesome name="camera" size={24} color="#4B5563" />
+                <Text className="text-gray-700 text-sm">Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="items-center justify-center gap-1 flex-1"
+                onPress={() => {
+                  // TODO: Handle image picker
+                }}
+              >
+                <FontAwesome name="file-image-o" size={24} color="#4B5563" />
+                <Text className="text-gray-700 text-sm">Hình ảnh</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="items-center justify-center gap-1 flex-1"
+                onPress={() => {
+                  // TODO: Handle video picker
+                }}
+              >
+                <FontAwesome name="microphone" size={24} color="#4B5563" />
+                <Text className="text-gray-700 text-sm">Audio</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Input Area */}
         <View
-          className="border-t border-gray-200 bg-white px-4 py-3"
-          style={{ paddingBottom: insets.bottom, height: showMoreOptions ? 180 : 100 }}
+          className="bg-gray-100 px-4 py-3"
+          style={{ paddingBottom: insets.bottom }}
         >
-          <HStack className="items-center gap-4">
-            <TouchableOpacity className="w-10 h-10 items-center justify-center rounded-full bg-primary-500" onPress={() => setShowMoreOptions(!showMoreOptions)}>
-                <FontAwesome name="ellipsis-h" size={20} color="white" />
+          <View className="bg-white rounded-full flex-row items-center px-3 py-2">
+            <TouchableOpacity 
+              className="w-10 h-10 items-center justify-center"
+              onPress={() => {
+                setShowMoreOptions(!showMoreOptions);
+              }}
+            >
+              <FontAwesome name="plus" size={20} color="#4B5563" />
             </TouchableOpacity>
-            <Box className="flex-1">
-              <Input variant="outline" size="md" className="my-1 h-[50px] border-gray-300  rounded-full">
+            <Box className="flex-1 mx-2">
+              <Input variant="outline" size="md" className="h-[50px] border-0 bg-transparent">
                 <InputField
                   placeholder="Nhập tin nhắn..."
                   value={message}
@@ -114,6 +142,7 @@ const ChatPage: React.FC = () => {
                   multiline
                   style={{ maxHeight: 100 }}
                   onSubmitEditing={handleSend}
+                  className="text-gray-700"
                 />
               </Input>
             </Box>
@@ -124,44 +153,14 @@ const ChatPage: React.FC = () => {
                 message.trim() ? 'bg-primary-500' : 'bg-gray-300'
               }`}
             >
+              { msgLoading && <ActivityIndicator size="small" color="#fff" />}
               <FontAwesome
                 name="paper-plane"
                 size={16}
-                color={message.trim() ? '#fff' : '#999'}
+                color="#fff"
               />
             </TouchableOpacity>
-          </HStack>
-          {showMoreOptions && (
-            <Box className="items-center flex-row mt-2">
-            <TouchableOpacity
-              className="w-4/12 h-[80px] items-center justify-center border border-gray-300 gap-2"
-              onPress={() => {
-                // TODO: Handle capture photo
-              }}
-            >
-              <FontAwesome name="camera" size={20} color="#42A59F" />
-              <Text className="text-typography-950 text-[14px]">Camera</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="w-4/12 h-[80px] items-center justify-center border border-gray-300 gap-2"
-              onPress={() => {
-                // TODO: Handle capture photo
-              }}
-            >
-              <FontAwesome name="file-image-o" size={20} color="#42A59F" />
-              <Text className="text-typography-950 text-[14px]">Hình ảnh</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              className="w-4/12 h-[80px] items-center justify-center border border-gray-300 gap-2"
-              onPress={() => {
-                // TODO: Handle capture photo
-              }}
-            >
-              <FontAwesome name="microphone" size={20} color="#42A59F" />
-              <Text className="text-typography-950 text-[14px]">Ghi âm</Text>
-            </TouchableOpacity>
-          </Box>
-          )}
+          </View>
         </View>
       </KeyboardAvoidingView>
   );

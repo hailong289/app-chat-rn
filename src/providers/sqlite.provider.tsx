@@ -145,23 +145,90 @@ export const SQLiteProvider = ({
         CREATE TABLE IF NOT EXISTS rooms (
           id TEXT PRIMARY KEY,
           roomId TEXT NOT NULL,
-          updatedAt INTEGER NOT NULL,
           type TEXT DEFAULT 'private',
-          last_message TEXT,
-          name TEXT NOT NULL,
-          is_read INTEGER DEFAULT 1,
+          name TEXT,
           avatar TEXT,
           members TEXT,
+          updatedAt TEXT,
+          last_message TEXT,
+          is_read INTEGER DEFAULT 1,
           unread_count INTEGER DEFAULT 0,
           pinned INTEGER DEFAULT 0,
           muted INTEGER DEFAULT 0,
-          created_at INTEGER NOT NULL
+          last_read_id TEXT
         )
       `);
       console.log('✅ Thành công tạo bảng rooms');
     } catch (error) {
       console.error('❌ Lỗi tạo bảng rooms:', error);
       throw error;
+    }
+  };
+
+  /* Tạo bảng messages */
+  const createTableMessages = async (database: any) => {
+    try {
+      await executeSqlQuery(database, `
+        CREATE TABLE IF NOT EXISTS messages (
+          id TEXT PRIMARY KEY,
+          roomId TEXT NOT NULL,
+          type TEXT NOT NULL DEFAULT 'text',
+          content TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          editedAt TEXT,
+          deletedAt TEXT,
+          pinned INTEGER DEFAULT 0,
+          sender TEXT,
+          attachments TEXT,
+          reactions TEXT,
+          reply TEXT,
+          isMine INTEGER DEFAULT 0,
+          isRead INTEGER DEFAULT 0,
+          hiddenByMe INTEGER DEFAULT 0,
+          hiddenAt TEXT,
+          read_by TEXT,
+          read_by_count INTEGER DEFAULT 0,
+          status TEXT
+        )
+      `);
+      
+      // Tạo index cho roomId để query nhanh hơn
+      await executeSqlQuery(database, `
+        CREATE INDEX IF NOT EXISTS idx_messages_roomId ON messages(roomId)
+      `);
+      
+      // Tạo index cho createdAt để sort nhanh hơn
+      await executeSqlQuery(database, `
+        CREATE INDEX IF NOT EXISTS idx_messages_createdAt ON messages(createdAt)
+      `);
+      
+      // Tạo index cho roomId và createdAt kết hợp
+      await executeSqlQuery(database, `
+        CREATE INDEX IF NOT EXISTS idx_messages_roomId_createdAt ON messages(roomId, createdAt)
+      `);
+      
+      // Tạo index cho isMine để filter nhanh hơn
+      await executeSqlQuery(database, `
+        CREATE INDEX IF NOT EXISTS idx_messages_isMine ON messages(isMine)
+      `);
+      
+      console.log('✅ Thành công tạo bảng messages');
+    } catch (error) {
+      console.error('❌ Lỗi tạo bảng messages:', error);
+      throw error;
+    }
+  };
+
+  /* Kiểm tra bảng đã tồn tại chưa */
+  const tableExists = async (database: any, tableName: string): Promise<boolean> => {
+    try {
+      const result = await executeSqlQuery(database, `
+        SELECT name FROM sqlite_master 
+        WHERE type='table' AND name=?
+      `, [tableName]);
+      return !!(result.rows && result.rows.length > 0);
+    } catch (error) {
+      return false;
     }
   };
 
@@ -174,17 +241,25 @@ export const SQLiteProvider = ({
       // Kiểm tra version hiện tại
       const currentVersion = await checkSchemaVersion(database);
       
-      // Nếu version đã đúng thì không tạo lại
-      if (currentVersion >= schemaVersion) {
-        console.log(`✅ Database schema đã ở version ${currentVersion}, không cần tạo lại`);
-        return;
+      // Tạo bảng rooms nếu chưa tồn tại
+      const roomsExists = await tableExists(database, 'rooms');
+      if (!roomsExists) {
+        await createTableRoom(database);
       }
       
-      // Tạo các bảng
-      await createTableRoom(database);
+      // Tạo bảng messages nếu chưa tồn tại 
+      const messagesExists = await tableExists(database, 'messages');
+        if (!messagesExists) {
+          await createTableMessages(database);
+        }
       
-      // Cập nhật version sau khi tạo xong
-      await updateSchemaVersion(database, schemaVersion);
+      // Cập nhật version nếu cần
+      if (currentVersion < schemaVersion) {
+        await updateSchemaVersion(database, schemaVersion);
+        console.log(`✅ Đã cập nhật schema từ version ${currentVersion} lên ${schemaVersion}`);
+      } else {
+        console.log(`✅ Database schema đã ở version ${currentVersion}`);
+      }
       
       console.log(`✅ Thành công tạo các bảng cần thiết (version ${schemaVersion})`);
     } catch (error) {
