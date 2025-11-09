@@ -16,15 +16,19 @@ export interface DatabaseResult {
 export interface SQLiteContextType {
   db: any | null;
   isInitialized: boolean;
-  executeSql: (query: string, params?: any[]) => Promise<DatabaseResult>;
   close: () => Promise<void>;
+  resetDatabase: () => Promise<void>;
+  isLoading: boolean;
+  error: string | null;
 }
 
 export const SQLiteContext = createContext<SQLiteContextType>({
   db: null,
   isInitialized: false,
-  executeSql: async () => ({ rowsAffected: 0 }),
   close: async () => {},
+  resetDatabase: async () => {},
+  isLoading: false,
+  error: null,
 });
 
 interface SQLiteProviderProps {
@@ -38,11 +42,12 @@ const CURRENT_SCHEMA_VERSION = 1;
 export const SQLiteProvider = ({ 
   children, 
   dbName = 'AppChatRN.db',
-  schemaVersion = CURRENT_SCHEMA_VERSION
+  schemaVersion = CURRENT_SCHEMA_VERSION,
 }: SQLiteProviderProps) => {
   const [db, setDb] = useState<any | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
-
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   /* Thực hiện câu lệnh SQL */
   const executeSqlQuery = async (
     database: any,
@@ -120,7 +125,6 @@ export const SQLiteProvider = ({
       console.log('✅ Thành công tạo bảng schema_version');
     } catch (error) {
       console.error('❌ Lỗi tạo bảng schema_version:', error);
-      throw error;
     }
   };
 
@@ -134,7 +138,6 @@ export const SQLiteProvider = ({
       console.log(`✅ Đã cập nhật schema version: ${version}`);
     } catch (error) {
       console.error('❌ Lỗi cập nhật schema version:', error);
-      throw error;
     }
   };
 
@@ -161,7 +164,6 @@ export const SQLiteProvider = ({
       console.log('✅ Thành công tạo bảng rooms');
     } catch (error) {
       console.error('❌ Lỗi tạo bảng rooms:', error);
-      throw error;
     }
   };
 
@@ -215,61 +217,29 @@ export const SQLiteProvider = ({
       console.log('✅ Thành công tạo bảng messages');
     } catch (error) {
       console.error('❌ Lỗi tạo bảng messages:', error);
-      throw error;
-    }
-  };
-
-  /* Kiểm tra bảng đã tồn tại chưa */
-  const tableExists = async (database: any, tableName: string): Promise<boolean> => {
-    try {
-      const result = await executeSqlQuery(database, `
-        SELECT name FROM sqlite_master 
-        WHERE type='table' AND name=?
-      `, [tableName]);
-      return !!(result.rows && result.rows.length > 0);
-    } catch (error) {
-      return false;
     }
   };
 
   /* Tạo các bảng cần thiết nếu chưa tồn tại */
   const createTables = async (database: any) => {
-    try {
-      // Tạo bảng schema_version trước
-      await createSchemaVersionTable(database);
-      
-      // Kiểm tra version hiện tại
-      const currentVersion = await checkSchemaVersion(database);
-      
-      // Tạo bảng rooms nếu chưa tồn tại
-      const roomsExists = await tableExists(database, 'rooms');
-      if (!roomsExists) {
-        await createTableRoom(database);
-      }
-      
-      // Tạo bảng messages nếu chưa tồn tại 
-      const messagesExists = await tableExists(database, 'messages');
-        if (!messagesExists) {
-          await createTableMessages(database);
-        }
-      
-      // Cập nhật version nếu cần
-      if (currentVersion < schemaVersion) {
-        await updateSchemaVersion(database, schemaVersion);
-        console.log(`✅ Đã cập nhật schema từ version ${currentVersion} lên ${schemaVersion}`);
-      } else {
-        console.log(`✅ Database schema đã ở version ${currentVersion}`);
-      }
-      
-      console.log(`✅ Thành công tạo các bảng cần thiết (version ${schemaVersion})`);
-    } catch (error) {
-      console.error('❌ Lỗi tạo các bảng cần thiết:', error);
-      throw error;
+    // Tạo bảng schema_version trước
+    await createSchemaVersionTable(database);
+    // Kiểm tra version hiện tại
+    const currentVersion = await checkSchemaVersion(database);
+    // Tạo bảng rooms nếu chưa tồn tại
+    await createTableRoom(database);
+    await createTableMessages(database);
+    // Cập nhật version nếu cần
+    if (currentVersion < schemaVersion) {
+      await updateSchemaVersion(database, schemaVersion);
+      console.log(`✅ Đã cập nhật schema từ version ${currentVersion} lên ${schemaVersion}`);
     }
+    console.log(`✅ Thành công tạo các bảng cần thiết (version ${schemaVersion})`);
   };
 
   // Khởi tạo database
   const initializeDatabase = async () => {
+    setIsLoading(true);
     try {
       const database = open({
         name: dbName,
@@ -286,18 +256,36 @@ export const SQLiteProvider = ({
     } catch (error) {
       console.error('❌ Lỗi khởi tạo database:', error);
       setIsInitialized(false);
+      setError(error as string);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const executeSql = async (
-    query: string,
-    params: any[] = []
-  ): Promise<DatabaseResult> => {
-    if (!db) {
-      throw new Error('Database not initialized');
+
+  const resetDatabase = async () => {
+    setIsLoading(true);
+    try {
+      // Xóa tất cả bảng
+      await executeSqlQuery(db, `
+        DROP TABLE IF EXISTS schema_version
+      `);
+      await executeSqlQuery(db, `
+        DROP TABLE IF EXISTS rooms
+      `);
+      await executeSqlQuery(db, `
+        DROP TABLE IF EXISTS messages
+      `);
+      // Tạo lại các bảng
+      await createTables(db);
+      console.log('✅ Thành công xóa và tạo lại các bảng');
+    } catch (error) {
+      console.error('❌ Lỗi xóa và tạo lại các bảng:', error);
+      setError(error as string);
+    } finally {
+      setIsLoading(false);
     }
-    return executeSqlQuery(db, query, params);
-  };
+  }
 
   const close = async () => {
     try {
@@ -314,7 +302,6 @@ export const SQLiteProvider = ({
 
   useEffect(() => {
     initializeDatabase();
-
     return () => {
       close();
     };
@@ -323,8 +310,10 @@ export const SQLiteProvider = ({
   const value: SQLiteContextType = {
     db,
     isInitialized,
-    executeSql,
     close,
+    resetDatabase,
+    isLoading,
+    error,
   };
 
   return (

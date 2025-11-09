@@ -8,6 +8,7 @@ import { Text } from 'react-native-gesture-handler';
 import { Button, ButtonSpinner, ButtonText } from '../components/ui/button';
 import useAuthStore from '../store/useAuth';
 import { Toast } from 'toastify-react-native';
+import { useSQLite } from '../providers/sqlite.provider';
 
 const items = [
   { title: 'Cài đặt tài khoản', subtitle: 'Cập nhật thông tin' },
@@ -17,9 +18,8 @@ const items = [
 ];
 
 const SettingsPage = () => {
-
   const { isLoading, logout } = useAuthStore();
-
+  const { resetDatabase } = useSQLite();
   const handleLogout = () => {
     // Xử lý đăng xuất ở đây
     logout({
@@ -61,6 +61,17 @@ const SettingsPage = () => {
             </HStack>
           </TouchableOpacity>
         ))}
+        <TouchableOpacity className="py-5 border-b border-secondary-200 border-gray-300" onPress={() => resetDatabase()}>
+          <HStack className="items-center py-5 border-b border-secondary-200 border-gray-300">
+            <VStack className="flex-1">
+              <Text className="text-[18px] font-bold text-typography-950">Xóa dữ liệu</Text>
+              <Text className="text-[14px] font-semibold text-gray-500 mt-1">Xóa tất cả dữ liệu</Text>
+            </VStack>
+            <Box className="w-9 items-center justify-center">
+              <Icon as={ChevronRightIcon} className="text-gray-500" />
+            </Box>
+          </HStack>
+        </TouchableOpacity>
         <Button
           className="mt-4 rounded-[20px] h-[50px] bg-error-500"
           // variant="negative"
