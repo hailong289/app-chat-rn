@@ -57,6 +57,40 @@ class Helpers {
         });
     }
 
+    static formatTime = (date: Date): string => {
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
+    }
+
+    static formatDateMessage = (date: Date): string => {
+        const dateMessage = new Date(date);
+
+        const today = new Date();
+        const yesterday = new Date();
+        yesterday.setDate(today.getDate() - 1);
+      
+        const isSameDay = (a: Date, b: Date) =>
+          a.getDate() === b.getDate() &&
+          a.getMonth() === b.getMonth() &&
+          a.getFullYear() === b.getFullYear();
+      
+        if (isSameDay(date, today)) {
+          return 'Hôm nay';
+        }
+      
+        if (isSameDay(date, yesterday)) {
+          return 'Hôm qua';
+        }
+      
+        return date.toLocaleDateString('vi-VN', {
+          weekday: 'long',
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        });
+    }
+
     public static generateRandomString = (length: number): string => {
         const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
         let result = '';

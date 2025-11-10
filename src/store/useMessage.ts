@@ -1,17 +1,20 @@
 import { create } from "zustand";
-import { MessageType, RoomData, SendMessageArgs } from "../types/message.type";
+import { FilePreview, MessageType, RoomData, SendMessageArgs } from "../types/message.type";
 import { ObjectId } from "bson";
 import Helpers from "../libs/helpers";
 import MessageService from "../service/message.service";
 import db from "../libs/db";
+import UploadService from "../service/upload.service";
 
 interface MessageState {
     messagesRoom: Record<string, RoomData>; // roomId -> room data;
     readedRooms: Record<string, string>; // roomId -> lastMessageId;
     isLoading: boolean;
     sendMessage: (payload: SendMessageArgs) => void;
-    getMessages: (roomId: string, lastMessageId?: string) => void;
+    getMessages: (roomId: string, pivotMessageId?: string, direction?: "new" | "old") => Promise<boolean>;
     upsertMessage: (msg: MessageType) => Promise<void>;
+    sendMessageWithAttachments: (roomId: string, messageId: string, attachments: FilePreview[], socket: any, data: MessageType) => Promise<void>;
+    updateAttachmentProgress: (roomId: string, messageId: string, fileId: string, progress: number, status?: string) => void;
 }
 
 const useMessageStore = create<MessageState>()(
@@ -60,6 +63,14 @@ const useMessageStore = create<MessageState>()(
                   },
                 },
             });
+
+            // Nếu có attachments, upload và gửi message
+            if (attachments && attachments.length > 0) {
+              await get().sendMessageWithAttachments(roomId, id, attachments, socket, data);
+              return;
+            }
+
+            
             socket?.emit("message:send", {
                 roomId,
                 type,
@@ -69,7 +80,165 @@ const useMessageStore = create<MessageState>()(
             });
             set({ isLoading: false });
         },
-        getMessages: async (roomId: string, lastMessageId?: string) => {
+        sendMessageWithAttachments: async ( 
+          roomId: string,
+          messageId: string,
+          attachments: FilePreview[],
+          socket: any,
+          data: MessageType
+        ) => {
+           const filesToUpload = attachments.filter((att) => att.file);
+           // Cập nhật progress upload
+           filesToUpload.forEach(async (file) => {
+              get().updateAttachmentProgress(
+                roomId,
+                messageId,
+                file._id,
+                0,
+                "uploading"
+              );
+           });
+           // Upload files
+           try {
+            // Upload song song với progress tracking - sử dụng _id có sẵn của FilePreview
+            const uploadedResults = await UploadService.uploadMultipleParallel(
+              filesToUpload.map((att) => att.file!),
+              {
+                roomId,
+                id: filesToUpload.map((att) => att._id), // Sử dụng _id có sẵn của FilePreview
+                onEachProgress: (index, progress) => {
+                  const fileId = filesToUpload[index]._id;
+                  get().updateAttachmentProgress(
+                    roomId,
+                    messageId,
+                    fileId,
+                    progress,
+                    "uploading"
+                  );
+                },
+              }
+            );
+  
+
+            for (let idx = 0; idx < uploadedResults.length; idx++) {
+              const result = uploadedResults[idx];
+              const originalId = filesToUpload[idx]._id;
+              const returnedId = result._id;
+              const match = originalId === returnedId;
+            }
+  
+            // Cập nhật attachments với URL đã upload
+            const updatedAttachments = attachments.map((att) => {
+              const uploadIndex = filesToUpload.findIndex(
+                (f) => f._id === att._id
+              );
+              if (uploadIndex === -1) return att; // File đã upload trước đó
+  
+              const uploadResult = uploadedResults[uploadIndex];
+  
+              // Revoke blob URL cũ
+              if (att.url.startsWith("blob:")) {
+                URL.revokeObjectURL(att.url);
+              }
+  
+              return {
+                ...att,
+                // _id giữ nguyên (đã dùng att._id khi upload, server trả về cùng _id)
+                _id: uploadResult._id,
+                uploadedUrl: uploadResult.url,
+                url: uploadResult.url, // Update main URL từ server
+                kind: uploadResult.kind || att.kind, // Cập nhật kind từ server
+                name: uploadResult.name || att.name, // Cập nhật name từ server
+                size: uploadResult.size || att.size, // Cập nhật size từ server
+                mimeType: uploadResult.mimeType || att.mimeType, // Cập nhật mimeType từ server
+                status: "uploaded",
+                uploadProgress: 100,
+                file: undefined, // Xóa file gốc sau khi upload
+              } as FilePreview;
+            });
+  
+            // Cập nhật attachments trong message
+            const currentRoom = get().messagesRoom[roomId];
+            const updatedMessages = (currentRoom?.messages || []).map((msg) =>
+              msg.id === messageId
+                ? { ...msg, attachments: updatedAttachments }
+                : msg
+            );
+  
+            // Cập nhật state
+            set({
+              messagesRoom: {
+                ...get().messagesRoom,
+                [roomId]: {
+                  ...currentRoom,
+                  messages: updatedMessages,
+                },
+              },
+            });
+
+            socket?.emit("message:send", {
+              roomId,
+              type: data.type,
+              content: data.content,
+              replyTo: data.reply?._id,
+              id: messageId,
+              attachments: updatedAttachments,
+            });
+  
+          } catch (error) {
+            // Đánh dấu tất cả là "failed"
+            for (const att of filesToUpload) {
+              get().updateAttachmentProgress(
+                roomId,
+                messageId,
+                att._id,
+                0,
+                "failed"
+              );
+            }
+          }
+        },
+        updateAttachmentProgress: (
+          roomId: string,
+          messageId: string,
+          fileId: string,
+          progress: number,
+          status?: string
+        ) => {
+          const currentRoom = get().messagesRoom[roomId];
+          if (!currentRoom?.messages) return;
+  
+          // Tìm message và cập nhật attachment progress
+          const updatedMessages = currentRoom.messages.map((msg) => {
+            if (msg.id !== messageId) return msg;
+  
+            const updatedAttachments = (msg.attachments || []).map((att) =>
+              att._id === fileId
+                ? {
+                    ...att,
+                    uploadProgress: progress,
+                    ...(status && { status }),
+                  }
+                : att
+            );
+  
+            return {
+              ...msg,
+              attachments: updatedAttachments,
+            };
+          });
+  
+          set({
+            messagesRoom: {
+              ...get().messagesRoom,
+              [roomId]: {
+                ...currentRoom,
+                messages: updatedMessages,
+              },
+            },
+          });
+        },
+        getMessages: async (roomId: string, pivotMessageId?: string, direction: "new" | "old" = "new") => {
             try {
                 set((state) => ({
                   ...state,
@@ -80,15 +249,15 @@ const useMessageStore = create<MessageState>()(
                 const response = await MessageService.getMessages({
                   roomId,
                   queryParams: {
-                    msgId: lastMessageId, // Lấy tin nhắn sau ID này
-                    limit: 50,
-                    type: "new",
+                    msgId: pivotMessageId, // Lấy tin nhắn quanh ID này
+                    limit: 20,
+                    type: direction,
                   },
                 });
       
                 if (!response.data.metadata || response.data.metadata.length === 0) {
                   set((state) => ({ ...state, isLoading: false }));
-                  return;
+                  return false;
                 }
       
                 const newMessages = response.data.metadata.map((msg: MessageType) => ({
@@ -123,28 +292,38 @@ const useMessageStore = create<MessageState>()(
                     !currentMessages.some((msg: MessageType) => msg.id === newMsg.id)
                 );
 
-                console.log("uniqueNewMessages", uniqueNewMessages);
-      
                 if (uniqueNewMessages.length > 0) {
-                  const lastNewMessageId =
-                    uniqueNewMessages[uniqueNewMessages.length - 1].id;
-      
-                  // Cập nhật vào readedRooms nếu có tin nhắn mới
-                  set((state) => ({
-                    ...state,
-                    readedRooms: {
-                      ...state.readedRooms,
-                      [roomId]: lastNewMessageId,
-                    },
-                  }));
-      
+                  if (direction === "new") {
+                    const lastNewMessageId =
+                      uniqueNewMessages[uniqueNewMessages.length - 1].id;
+
+                    // Cập nhật vào readedRooms nếu có tin nhắn mới
+                    set((state) => ({
+                      ...state,
+                      readedRooms: {
+                        ...state.readedRooms,
+                        [roomId]: lastNewMessageId,
+                      },
+                    }));
+                  }
+
+                  const mergedMessages =
+                    direction === "old"
+                      ? [...uniqueNewMessages, ...currentMessages]
+                      : [...currentMessages, ...uniqueNewMessages];
+
+                  const sortedMessages = mergedMessages.sort(
+                    (a: MessageType, b: MessageType) =>
+                      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                  );
+
                   // Cập nhật messages trong room
                   set((state) => ({
                     ...state,
                     messagesRoom: {
                       ...state.messagesRoom,
                       [roomId]: {
-                        messages: [...currentMessages, ...uniqueNewMessages],
+                        messages: sortedMessages,
                         input: currentRoom.input || null,
                         attachments: currentRoom.attachments || null,
                         ghim: currentRoom.ghim || null,
@@ -156,12 +335,14 @@ const useMessageStore = create<MessageState>()(
                 } else {
                   set((state) => ({ ...state, isLoading: false }));
                 }
+
+                return uniqueNewMessages.length > 0;
               } catch (error) {
-                console.error("Error fetching new messages:", error);
                 set((state) => ({
                   ...state,
                   isLoading: false,
                 }));
+                return false;
             }
         },
         upsertMessage: async (msg: MessageType) => {

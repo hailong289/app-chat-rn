@@ -52,17 +52,17 @@ const useRoomStore = create<RoomState>()(
                 payload.success();
             } catch (error) {
                 // Nếu lỗi, lấy dữ liệu từ db
-                // const rooms = await db
-                // .setTable('rooms')
-                // .select(['*'])
-                // .where('type', '=', payload.type)
-                // .limit(payload.limit)
-                // .offset(payload.offset)
-                // .get();
-                // set({
-                //     rooms: (rooms as unknown as Room[]),
-                //     isLoading: false,
-                // });
+                const rooms = await db
+                .setTable('rooms')
+                .select(['*'])
+                .where('type', '=', payload.type)
+                .limit(payload.limit)
+                .offset(payload.offset)
+                .get();
+                set({
+                    rooms: (rooms as unknown as Room[]),
+                    isLoading: false,
+                });
                 payload.error(error);
             }
         },
