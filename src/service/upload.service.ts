@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import { UploadSingleResp, UploadApiResponse } from "../types/upload.type.ts";
 import apiService from "./api.service";
 
@@ -66,7 +67,7 @@ export default class UploadService {
   // dùng thẳng axios instance để truyền onUploadProgress + signal
 
   static async uploadSingleWithProgress(
-    file: File | Blob,
+    file: File & { fileName: string; uri: string },
     options?: {
       roomId?: string;
       id?: string;
@@ -76,18 +77,16 @@ export default class UploadService {
     }
   ) {
     const form = new FormData();
-    form.append("file", file);
+    form.append("file", {
+      name: file.fileName,
+      type: file.type,
+      // Xử lý URI cho đúng
+      uri: Platform.OS === 'android' ? file.uri : file.uri.replace('file://', ''),
+    });
     form.append("roomId", options?.roomId ?? "avatar");
     form.append("id", options?.id ?? "");
 
-    console.log("📤 Uploading file:", {
-      fileName: file instanceof File ? file.name : "blob",
-      fileSize: file.size,
-      roomId: options?.roomId,
-      fileId: options?.id, // ← ID gửi lên server
-    });
-
-    const response = await apiService.axios.post<UploadApiResponse>(
+    const response = await apiService.withTimeout(10000).axios.post<UploadApiResponse>(
       options?.endpoint ?? "/filesystem/upload-single-user",
       form,
       {
@@ -101,17 +100,8 @@ export default class UploadService {
       }
     );
 
-    console.log("📥 Raw API response:", response.data);
-    console.log("🔍 Check ID consistency:", {
-      sentId: options?.id,
-      receivedId: response.data.metadata._id,
-      match: options?.id === response.data.metadata._id,
-    });
-
     // Transform response về format chuẩn
     const transformed = this.transformUploadResponse(response.data);
-    console.log("🔄 Transformed:", transformed);
-
     return {
       ...response,
       data: transformed,
@@ -140,7 +130,7 @@ export default class UploadService {
         ? options.id[i] ?? ""
         : options?.id ?? "";
 
-      const { data } = await this.uploadSingleWithProgress(f, {
+      const { data } = await this.uploadSingleWithProgress(f as File & { fileName: string; uri: string }, {
         roomId: options?.roomId ?? "avatar",
         id: fileId,
         signal: options?.signal,
@@ -157,12 +147,11 @@ export default class UploadService {
    * Có onEachProgress cho từng index.
    */
   static async uploadMultipleParallel(
-    files: Array<File | Blob>,
+    files: Array<File & { fileName: string; uri: string }>,
     options?: {
       roomId?: string;
       id?: string | string[]; // Hỗ trợ ID riêng cho từng file hoặc ID chung
       onEachProgress?: (index: number, pct: number) => void;
-      signal?: AbortSignal;
     }
   ) {
     const tasks = files.map((f, idx) => {
@@ -171,10 +160,9 @@ export default class UploadService {
         ? options.id[idx] ?? ""
         : options?.id ?? "";
 
-      return this.uploadSingleWithProgress(f, {
+      return this.uploadSingleWithProgress(f as File & { fileName: string; uri: string }, {
         roomId: options?.roomId ?? "avatar",
         id: fileId,
-        signal: options?.signal,
         onProgress: (pct) => options?.onEachProgress?.(idx, pct),
       }).then((res) => res.data);
     });

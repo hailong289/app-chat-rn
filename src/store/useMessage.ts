@@ -87,25 +87,28 @@ const useMessageStore = create<MessageState>()(
           socket: any,
           data: MessageType
         ) => {
-           const filesToUpload = attachments.filter((att) => att.file);
-           // Cập nhật progress upload
-           filesToUpload.forEach(async (file) => {
-              get().updateAttachmentProgress(
-                roomId,
-                messageId,
-                file._id,
-                0,
-                "uploading"
-              );
-           });
-           // Upload files
+          const filesToUpload = attachments.filter((att) => att.file);
+          const fileIds = filesToUpload.map((att) => att._id);
+          const files = filesToUpload.map((att) => att.file!);
+          // Cập nhật progress upload
+          filesToUpload.forEach(async (file) => {
+            get().updateAttachmentProgress(
+              roomId,
+              messageId,
+              file._id,
+              0,
+              "uploading"
+            );
+          });
+          console.log('files', filesToUpload);
+          // Upload files
            try {
             // Upload song song với progress tracking - sử dụng _id có sẵn của FilePreview
             const uploadedResults = await UploadService.uploadMultipleParallel(
-              filesToUpload.map((att) => att.file!),
+              files,
               {
                 roomId,
-                id: filesToUpload.map((att) => att._id), // Sử dụng _id có sẵn của FilePreview
+                id: fileIds,
                 onEachProgress: (index, progress) => {
                   const fileId = filesToUpload[index]._id;
                   get().updateAttachmentProgress(
@@ -118,14 +121,8 @@ const useMessageStore = create<MessageState>()(
                 },
               }
             );
-  
 
-            for (let idx = 0; idx < uploadedResults.length; idx++) {
-              const result = uploadedResults[idx];
-              const originalId = filesToUpload[idx]._id;
-              const returnedId = result._id;
-              const match = originalId === returnedId;
-            }
+            console.log('uploadedResults', uploadedResults);
   
             // Cập nhật attachments với URL đã upload
             const updatedAttachments = attachments.map((att) => {
@@ -175,6 +172,8 @@ const useMessageStore = create<MessageState>()(
                 },
               },
             });
+
+            console.log('updatedAttachments', updatedAttachments);
 
             socket?.emit("message:send", {
               roomId,

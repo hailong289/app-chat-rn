@@ -77,7 +77,7 @@ export type FilePreview = {
     status?: string; // "pending" | "uploading" | "uploaded" | "failed"
     uploadProgress?: number; // 0-100 (%)
     uploadedUrl?: string; // URL sau khi upload thành công
-    file?: File; // File gốc để upload
+    file?: File & { fileName: string; uri: string }; // File gốc để upload
   };
 
   export interface RoomData {

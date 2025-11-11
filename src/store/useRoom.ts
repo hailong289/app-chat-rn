@@ -52,23 +52,13 @@ const useRoomStore = create<RoomState>()(
                 payload.success();
             } catch (error) {
                 // Nếu lỗi, lấy dữ liệu từ db
-                const rooms = await db
-                .setTable('rooms')
-                .select(['*'])
-                .where('type', '=', payload.type)
-                .limit(payload.limit)
-                .offset(payload.offset)
-                .get();
-                set({
-                    rooms: (rooms as unknown as Room[]),
-                    isLoading: false,
-                });
+                await get().getRoomsByType(payload.type, payload.limit, payload.offset);
                 payload.error(error);
             }
         },
         getRoomsByType: async (type: string, limit: number, offset: number) => {
             let rooms;
-            const query = db.setTable('rooms').select(['*']).limit(limit).offset(offset);
+            const query = db.setTable('rooms').select(['*']).orderBy('updatedAt', 'ASC').limit(limit).offset(offset);
             if (type == "all") {
               rooms = await query.get() as unknown as Room[];
             } else {
@@ -77,9 +67,11 @@ const useRoomStore = create<RoomState>()(
             set({
               rooms: (rooms || []).sort((a: Room, b: Room) =>
                 new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-              ) as Room[],
+              ).map((room) => ({
+                ...room,
+                last_message: typeof room.last_message === 'string' ? JSON.parse(room.last_message) : room.last_message,
+              }) as Room),
             });
-            console.log('rooms2', JSON.parse(JSON.stringify(rooms)));
             return rooms;
         },
         addRoom: (room) => {

@@ -1,5 +1,4 @@
 import axios from "axios";
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL, APP_ENV, API_URL_PRODUCTION } from "@/env.json";
 import useAuthStore from "../store/useAuth";
 
@@ -15,28 +14,21 @@ class ApiService {
             timeout: 10000, // Thời gian chờ mặc định 10 giây (Nếu cần tăng thêm, có thể sử dụng phương thức withTimeout)
         });
         this.axiosInstance.interceptors.request.use(async (config) => {
-            if (config.data instanceof FormData) {
-                config.headers["Content-Type"] = "multipart/form-data";
+            // Kiểm tra và thêm header Authorization nếu token tồn tại
+            const isFormData = config.data instanceof FormData || (config.data && config.data._parts);
+            if (isFormData) {
+                // QUAN TRỌNG: Xóa Content-Type để trình duyệt/native tự động set 'multipart/form-data' + boundary
+                config.headers["Content-Type"] = 'multipart/form-data';
             } else if (config.data instanceof Blob || config.data instanceof File) {
                 config.headers["Content-Type"] = "application/octet-stream";
             } else if (config.data && typeof config.data === "object") {
                 config.headers["Content-Type"] = "application/json";
-            } else if (typeof config.data === "string" && config.data.includes("=")) {
-                config.headers["Content-Type"] = "application/x-www-form-urlencoded";
-            } else if (
-                config.data instanceof ArrayBuffer ||
-                ArrayBuffer.isView(config.data)
-            ) {
-                config.headers["Content-Type"] = "application/octet-stream";
-            } else {
-                config.headers["Content-Type"] = "text/plain";
-            }
-            // Kiểm tra và thêm header Authorization nếu token tồn tại
+            } 
             const { accessToken } = await this.getTokens();
             if (accessToken) {
                 config.headers["Authorization"] = `Bearer ${accessToken}`;
             }
-            console.log('Request:', config);
+            console.log('Request:', config, isFormData);
             return config;
         });
 

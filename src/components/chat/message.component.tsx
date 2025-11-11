@@ -66,6 +66,9 @@ const MessageBubble: React.FC<{ item: MessageType }> = ({ item }) => {
   const [videoViewerIndex, setVideoViewerIndex] = useState(0);
 
   const getAttachmentSource = useCallback((attachment: Attachment) => {
+    if (attachment.kind === 'video' || attachment.mimeType?.startsWith('video/')) {
+      return attachment.thumbUrl || attachment.uploadedUrl;
+    }
     return attachment.thumbUrl || attachment.uploadedUrl || attachment.url;
   }, []);
 

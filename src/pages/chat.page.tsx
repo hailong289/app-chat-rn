@@ -89,7 +89,7 @@ const ChatPage: React.FC = () => {
   const handlePickImages = useCallback(async () => {
     try {
       const result = await launchImageLibrary({
-        mediaType: 'photo',
+        mediaType: 'mixed',
         selectionLimit: 10,
         includeBase64: false,
       });
@@ -111,22 +111,15 @@ const ChatPage: React.FC = () => {
 
           return {
             _id: new ObjectId().toHexString(),
-            kind: 'image',
-            url: uri,
-            thumbUrl: uri,
-            name,
+            file: asset,
+            url: asset.uri,
+            name: asset.fileName,
             size: asset.fileSize || 0,
-            mimeType,
-            width: asset.width || undefined,
-            height: asset.height || undefined,
-            status: 'pending',
+            mimeType: mimeType,
+            kind: "image",
+            status: "pending",
             uploadProgress: 0,
-            file: {
-              uri,
-              name,
-              type: mimeType,
-            } as unknown as File,
-          };
+          } as FilePreview;
         });
 
       if (mappedAttachments.length > 0) {
@@ -230,7 +223,7 @@ const ChatPage: React.FC = () => {
                 onPress={handlePickImages}
               >
                 <FontAwesome name="file-image-o" size={24} color="#4B5563" />
-                <Text className="text-gray-700 text-sm">Hình ảnh</Text>
+                <Text className="text-gray-700 text-sm">Thư viện</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 className="items-center justify-center gap-1 flex-1"
@@ -257,7 +250,7 @@ const ChatPage: React.FC = () => {
                 <View key={attachment._id} className="relative">
                   <Image
                     source={{ uri: attachment.thumbUrl || attachment.url }}
-                    className="w-24 h-24 rounded-xl bg-gray-200"
+                    className="w-20 h-20 rounded-xl bg-gray-200"
                   />
                   <TouchableOpacity
                     className="absolute -top-2 -right-2 bg-black/70 w-6 h-6 rounded-full items-center justify-center"
