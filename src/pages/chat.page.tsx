@@ -274,6 +274,9 @@ const ChatPage: React.FC = () => {
               className="w-10 h-10 items-center justify-center"
               onPress={() => {
                 setShowMoreOptions(!showMoreOptions);
+                setTimeout(() => {
+                  flatListRef.current?.scrollToEnd({ animated: false });
+                }, 300);
               }}
             >
               <FontAwesome name="plus" size={20} color="#4B5563" />

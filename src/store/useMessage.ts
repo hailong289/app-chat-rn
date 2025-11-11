@@ -181,7 +181,7 @@ const useMessageStore = create<MessageState>()(
               content: data.content,
               replyTo: data.reply?._id,
               id: messageId,
-              attachments: updatedAttachments,
+              attachments: updatedAttachments.map((att) => att._id),
             });
   
           } catch (error) {
