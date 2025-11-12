@@ -267,7 +267,6 @@ const useMessageStore = create<MessageState>()(
                 }));
       
                 // Lưu từng tin nhắn vào IndexedDB
-                // DB.enableLog(true);
                 await Promise.all(
                   newMessages.map((msg: MessageType) => {  
                       db.setTable('messages').upsert({
@@ -284,45 +283,22 @@ const useMessageStore = create<MessageState>()(
                 // Cập nhật state
                 const currentRoom = get().messagesRoom[roomId] || {};
                 const currentMessages = (currentRoom as any).messages || [];
-      
-                // Lọc ra những tin nhắn chưa có trong state
-                const uniqueNewMessages = newMessages.filter(
-                  (newMsg: MessageType) =>
-                    !currentMessages.some((msg: MessageType) => msg.id === newMsg.id)
-                );
 
-                if (uniqueNewMessages.length > 0) {
-                  if (direction === "new") {
-                    const lastNewMessageId =
-                      uniqueNewMessages[uniqueNewMessages.length - 1].id;
-
-                    // Cập nhật vào readedRooms nếu có tin nhắn mới
-                    set((state) => ({
-                      ...state,
-                      readedRooms: {
-                        ...state.readedRooms,
-                        [roomId]: lastNewMessageId,
-                      },
-                    }));
-                  }
-
-                  const mergedMessages =
-                    direction === "old"
-                      ? [...uniqueNewMessages, ...currentMessages]
-                      : [...currentMessages, ...uniqueNewMessages];
-
-                  const sortedMessages = mergedMessages.sort(
-                    (a: MessageType, b: MessageType) =>
-                      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                  );
-
-                  // Cập nhật messages trong room
+                if (direction === "new") {
+                  const messages = newMessages.slice(0, 20);
+                  // lấy id của tin nhắn mới nhất
+                  const lastNewMessageId = messages[messages.length - 1].id;
                   set((state) => ({
                     ...state,
+                    readedRooms: {
+                      ...state.readedRooms,
+                      [roomId]: lastNewMessageId,
+                    },
                     messagesRoom: {
                       ...state.messagesRoom,
                       [roomId]: {
-                        messages: sortedMessages,
+                        ...currentRoom,
+                        messages: messages, // Lấy 20 tin nhắn mới nhất
                         input: currentRoom.input || null,
                         attachments: currentRoom.attachments || null,
                         ghim: currentRoom.ghim || null,
@@ -332,16 +308,50 @@ const useMessageStore = create<MessageState>()(
                     isLoading: false,
                   }));
                 } else {
+                  // Lọc ra những tin nhắn chưa có trong state
+                  const uniqueNewMessages = newMessages.filter(
+                    (newMsg: MessageType) =>
+                      !currentMessages.some((msg: MessageType) => msg.id === newMsg.id)
+                  );
+
+                  const mergedMessages = [...currentMessages, ...uniqueNewMessages];
+
+                  const sortedMessages = mergedMessages.sort(
+                    (a: MessageType, b: MessageType) =>
+                      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                  );
+
+                  if (uniqueNewMessages.length > 0) {
+                    set((state) => ({
+                      ...state,
+                      readedRooms: {
+                        ...state.readedRooms,
+                        [roomId]: uniqueNewMessages[uniqueNewMessages.length - 1].id,
+                      },
+                      messagesRoom: {
+                        ...state.messagesRoom,
+                        [roomId]: {
+                          ...currentRoom,
+                          messages: sortedMessages,
+                          input: currentRoom.input || null,
+                          attachments: currentRoom.attachments || null,
+                          ghim: currentRoom.ghim || null,
+                          updatedAt: new Date().toISOString(),
+                        },
+                      },
+                      isLoading: false,
+                    }));
+                    return true;
+                  }
                   set((state) => ({ ...state, isLoading: false }));
                 }
-
-                return uniqueNewMessages.length > 0;
+                return true;
               } catch (error) {
                 set((state) => ({
                   ...state,
                   isLoading: false,
                 }));
-                return false;
+                return true;
             }
         },
         upsertMessage: async (msg: MessageType) => {

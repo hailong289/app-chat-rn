@@ -33,6 +33,7 @@ const ChatPage: React.FC = () => {
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<any>(null);
   const hasMoreOlderRef = useRef<boolean>(true);
+  const atTopRef = useRef<boolean>(false);
   const [message, setMessage] = useState('');
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const { roomId } = (route.params as { roomId: string }) || {};
@@ -43,20 +44,16 @@ const ChatPage: React.FC = () => {
   const { user } = useAuthStore();
 
   useEffect(() => {
-    // Load messages from API hoặc database
-    // Tạm thời dùng mock data
     hasMoreOlderRef.current = true;
     getMessages(roomId);
   }, [roomId]);
 
   useEffect(() => {
-    // Thay đổi scroll khi có tin nhắn mới
+    // Thay đổi scroll khi có tin nhắn mới - chỉ chạy lần đầu tiên vào
     if (messagesRoom[roomId]?.messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      handleScrollToEnd();
     }
-  }, [messagesRoom, roomId]);
+  }, [roomId]);
 
   const hasAttachments = selectedAttachments.length > 0;
 
@@ -113,7 +110,7 @@ const ChatPage: React.FC = () => {
             _id: new ObjectId().toHexString(),
             file: asset,
             url: asset.uri,
-            name: asset.fileName,
+            name: name,
             size: asset.fileSize || 0,
             mimeType: mimeType,
             kind: "image",
@@ -168,12 +165,27 @@ const ChatPage: React.FC = () => {
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset } = event.nativeEvent;
-      if (contentOffset.y <= 32) {
-        handleLoadMore();
+      const isAtTop = contentOffset.y <= 36;
+      if (isAtTop) {
+        if (!atTopRef.current) {
+          atTopRef.current = true; 
+          handleLoadMore(); 
+        }
+      } else {
+        if (atTopRef.current) {
+          atTopRef.current = false; 
+        }
       }
     },
-    [handleLoadMore],
+    [handleLoadMore], 
   );
+
+  const handleScrollToEnd = useCallback(() => {
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: false });
+    }, 500);
+  }, []);
+
   return (
     <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -194,10 +206,10 @@ const ChatPage: React.FC = () => {
               </View>
             ) : null
           }
-          contentContainerStyle={{ paddingVertical: 16 }}
           onScroll={handleScroll}
-          scrollEventThrottle={16}
+          scrollEventThrottle={18}
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          contentContainerStyle={{ paddingVertical: 16 }}
           ListEmptyComponent={
             <View className="flex-1 items-center justify-center py-20">
               <Text className="text-gray-400">Chưa có tin nhắn nào</Text>
@@ -274,9 +286,7 @@ const ChatPage: React.FC = () => {
               className="w-10 h-10 items-center justify-center"
               onPress={() => {
                 setShowMoreOptions(!showMoreOptions);
-                setTimeout(() => {
-                  flatListRef.current?.scrollToEnd({ animated: false });
-                }, 300);
+                handleScrollToEnd();
               }}
             >
               <FontAwesome name="plus" size={20} color="#4B5563" />
