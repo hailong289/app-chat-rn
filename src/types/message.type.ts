@@ -7,10 +7,10 @@ export type MessageSender = {
     avatar: string;
   };
  
-  export type MessageType = {
+export type MessageType = {
     id: string;
     roomId: string;
-    type: "text" | "image" | "file" | "video";
+    type: "text" | "image" | "file" | "system" | "video" | "audio" | "gif";
     content: string;
     createdAt: string;
     editedAt?: string | null;
@@ -37,11 +37,14 @@ export type MessageSender = {
         _id: string;
         name: string;
       };
+      isMine: boolean;
+      hiddenByMe: boolean;
+      isDeleted: boolean;
     };
     isMine: boolean;
     isRead: boolean;
-    hiddenByMe?: boolean;
-    hiddenAt?: string | null;
+    hiddenByMe: boolean;
+    hiddenAt: string | null;
     read_by?: Array<{
       readAt: string;
       user: {
@@ -51,6 +54,7 @@ export type MessageSender = {
         avatar: string;
       };
     }>;
+    isDeleted: boolean;
     read_by_count?: number;
     status?:
       | "sent"
@@ -61,14 +65,14 @@ export type MessageSender = {
       | "uploading"
       | "uploaded"
       | "recalled";
-  };
+};
 
-export type FilePreview = {
+  export type FilePreview = {
     _id: string;
     kind: string;
     url: string; // Local blob URL hoặc remote URL sau upload
     name: string;
-    size: number;
+    size: number; // Support both local and server formats
     mimeType: string;
     thumbUrl?: string;
     width?: number;
@@ -77,7 +81,8 @@ export type FilePreview = {
     status?: string; // "pending" | "uploading" | "uploaded" | "failed"
     uploadProgress?: number; // 0-100 (%)
     uploadedUrl?: string; // URL sau khi upload thành công
-    file?: File & { fileName: string; uri: string }; // File gốc để upload
+    file?: File; // File gốc để upload
+    uploadError?: any; // optional structured error info when upload failed
   };
 
   export interface RoomData {

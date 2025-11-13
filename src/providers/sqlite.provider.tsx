@@ -158,7 +158,9 @@ export const SQLiteProvider = ({
           unread_count INTEGER DEFAULT 0,
           pinned INTEGER DEFAULT 0,
           muted INTEGER DEFAULT 0,
-          last_read_id TEXT
+          last_read_id TEXT,
+          pinned_messages TEXT,
+          pinned_count INTEGER DEFAULT 0
         )
       `);
       console.log('✅ Thành công tạo bảng rooms');
@@ -189,6 +191,7 @@ export const SQLiteProvider = ({
           hiddenByMe INTEGER DEFAULT 0,
           hiddenAt TEXT,
           read_by TEXT,
+          isDeleted INTEGER DEFAULT 0,
           read_by_count INTEGER DEFAULT 0,
           status TEXT
         )
