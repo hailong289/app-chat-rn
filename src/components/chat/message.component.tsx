@@ -8,6 +8,7 @@ import VideoViewerModal from './video-viewer-modal.component';
 import ImageGrid from './image-grid.component';
 import VideoGrid from './video-grid.component';
 import { ImageAvatar } from './image-avatar.component';
+import { Box } from '../ui/box';
 
 export type DateSeparatorItem = {
   kind: 'date';
@@ -67,10 +68,12 @@ const MessageBubble: React.FC<{ item: MessageType }> = ({ item }) => {
   const [videoViewerIndex, setVideoViewerIndex] = useState(0);
 
   const getAttachmentSource = useCallback((attachment: Attachment) => {
-    if (attachment.kind === 'video' || attachment.mimeType?.startsWith('video/')) {
-      return attachment.thumbUrl || attachment.uploadedUrl;
+    console.log('attachment', attachment);
+    if (attachment?.mimeType?.startsWith('video/')) {
+      // Ưu tiên uploadedUrl hoặc url cho video để hiển thị bản xem trước
+      return attachment.uploadedUrl || attachment.url || attachment.thumbUrl;
     }
-    return attachment.thumbUrl || attachment.uploadedUrl || attachment.url;
+    return attachment?.thumbUrl || attachment?.uploadedUrl || attachment?.url;
   }, []);
 
   const handleImagePress = useCallback((index: number) => {
@@ -84,15 +87,17 @@ const MessageBubble: React.FC<{ item: MessageType }> = ({ item }) => {
   }, []);
 
   return (
-    <View className={`mb-4 ${item.isMine ? 'items-end' : 'items-start'}`}>
-      <HStack className="items-end">
-        {!item.isMine && item.sender.avatar && (
-          <ImageAvatar
-            src={item.sender.avatar}
-            id={item.sender._id}
-            size={24}
-            style={{ width: 24, height: 24, borderRadius: 12 }}
-          />
+    <View className={`mb-6 ${item.isMine ? 'items-end' : 'items-start'}`}>
+      <HStack className="items-start">
+        {!item.isMine && (
+         <Box className="mr-2" style={{ paddingTop: 0 }}>
+            <ImageAvatar
+                src={item.sender.avatar}
+                id={item.sender._id}
+                size={24}
+                style={{ width: 24, height: 24, borderRadius: 12 }}
+              />
+          </Box>
         )}
         {
           hasMedia ? (
@@ -142,11 +147,15 @@ const MessageBubble: React.FC<{ item: MessageType }> = ({ item }) => {
             </View>
           )
         }
-        {item.isMine && item.sender.avatar && (
-          <Image
-            source={{ uri: item.sender.avatar }}
-            className="w-6 h-6 rounded-full mt-[-30px] mx-2"
-          />
+        {item.isMine && (
+            <Box className="ml-2" style={{ paddingTop: 0 }}>
+             <ImageAvatar
+                src={item.sender.avatar}
+                id={item.sender._id}
+                size={24}
+                style={{ width: 24, height: 24, borderRadius: 12 }}
+              />
+           </Box>
         )}
         
       </HStack>

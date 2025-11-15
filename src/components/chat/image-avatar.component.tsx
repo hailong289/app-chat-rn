@@ -83,11 +83,32 @@ export const ImageAvatar: React.FC<ImageAvatarProps> = ({ src, id, size, style }
           />
         </>
       ) : (
-        <Box 
-          className="items-center justify-center bg-secondary-200 rounded-full" 
-          style={{ width: size, height: size }}
+        <Box
         >
-          <FontAwesome name="user" size={size * 0.4} color="#42A59F" />
+           {isLoading && (
+            <Animated.View
+              style={{ 
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: size, 
+                height: size, 
+                borderRadius: size / 2,
+                backgroundColor: '#E5E7EB',
+                opacity: opacity,
+                zIndex: 1
+              }}
+            />
+          )}
+          <Image 
+            source={require('@/src/assets/images/user-avatar.png')}
+            style={{ width: size, height: size, borderRadius: size / 2 }}
+            onLoadStart={handleLoadStart}
+            onLoadEnd={handleLoadEnd}
+            onError={handleError}
+          />
         </Box>
       )}
     </Box>

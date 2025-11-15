@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, Modal, Dimensions, ScrollView, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, Dimensions, ScrollView, ActivityIndicator } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { FilePreview } from '@/src/types/message.type';
+import Video from 'react-native-video';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -23,8 +24,7 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
   getAttachmentSource,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
-
-  const currentVideo = videos[currentIndex];
+  const [loadingStates, setLoadingStates] = useState<{ [key: string]: boolean }>({});
 
   return (
     <Modal
@@ -65,8 +65,9 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
           contentOffset={{ x: currentIndex * SCREEN_WIDTH, y: 0 }}
         >
           {videos.map((video, idx) => {
-            const thumbnail = getAttachmentSource(video);
-            const url = video.uploadedUrl || video.url;
+            const videoUrl = getAttachmentSource(video);
+            const isCurrentVideo = idx === currentIndex;
+            const isLoading = loadingStates[video._id] !== false;
             
             return (
               <View
@@ -78,15 +79,41 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
                   alignItems: 'center',
                 }}
               >
-                {thumbnail ? (
-                  <Image
-                    source={{ uri: thumbnail }}
-                    style={{
-                      width: SCREEN_WIDTH,
-                      height: '80%',
-                    }}
-                    resizeMode="contain"
-                  />
+                {videoUrl ? (
+                  <>
+                    {isLoading && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          width: SCREEN_WIDTH,
+                          height: '80%',
+                          backgroundColor: '#000',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          zIndex: 1,
+                        }}
+                      >
+                        <ActivityIndicator size="large" color="#fff" />
+                      </View>
+                    )}
+                    <Video
+                      source={{ uri: videoUrl }}
+                      style={{
+                        width: SCREEN_WIDTH,
+                        height: '80%',
+                      }}
+                      resizeMode="contain"
+                      paused={!isCurrentVideo}
+                      controls={true}
+                      repeat={false}
+                      onLoad={() => {
+                        setLoadingStates(prev => ({ ...prev, [video._id]: false }));
+                      }}
+                      onError={() => {
+                        setLoadingStates(prev => ({ ...prev, [video._id]: false }));
+                      }}
+                    />
+                  </>
                 ) : (
                   <View
                     style={{
@@ -97,58 +124,9 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
                       alignItems: 'center',
                     }}
                   >
-                    <Text style={{ color: '#fff', fontSize: 16, marginBottom: 20 }}>
+                    <Text style={{ color: '#fff', fontSize: 16 }}>
                       Không có bản xem trước
                     </Text>
-                  </View>
-                )}
-                {/* Play button */}
-                <TouchableOpacity
-                  onPress={() => {
-                    if (url) {
-                      Linking.openURL(url).catch(() => {});
-                    }
-                  }}
-                  style={{
-                    position: 'absolute',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                  }}
-                >
-                  <View
-                    style={{
-                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                      width: 80,
-                      height: 80,
-                      borderRadius: 40,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <FontAwesome name="play" size={32} color="#fff" />
-                  </View>
-                </TouchableOpacity>
-                {/* Video info */}
-                {video.name && (
-                  <View
-                    style={{
-                      position: 'absolute',
-                      bottom: 100,
-                      left: 20,
-                      right: 20,
-                      backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                      padding: 12,
-                      borderRadius: 8,
-                    }}
-                  >
-                    <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold' }}>
-                      {video.name}
-                    </Text>
-                    {video.duration && (
-                      <Text style={{ color: '#fff', fontSize: 12, marginTop: 4 }}>
-                        {Math.floor(video.duration / 60)}:{String(Math.floor(video.duration % 60)).padStart(2, '0')}
-                      </Text>
-                    )}
                   </View>
                 )}
               </View>

@@ -162,7 +162,7 @@ const HomePage = () => {
                   <HStack className="items-center flex-1 mr-2">
                     <Box className="relative mr-2">
                       <ImageAvatar
-                        src={item.avatar || 'https://avatar.iran.liara.run/public'}
+                        src={item.avatar}
                         id={item.id}
                         size={44}
                         style={{ width: 50, height: 50, borderRadius: 25 }}

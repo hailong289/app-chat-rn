@@ -1,8 +1,9 @@
-import React from 'react';
-import { View, Text, Image, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { FilePreview } from '@/src/types/message.type';
 import { Dimensions } from 'react-native';
+import Video from 'react-native-video';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MAX_GRID_WIDTH = SCREEN_WIDTH * 0.75;
@@ -31,11 +32,11 @@ const VideoGridItem: React.FC<VideoGridItemProps> = ({
   getAttachmentSource,
 }) => {
   const sourceUri = getAttachmentSource(attachment);
+  const [isLoading, setIsLoading] = useState(true);
   const isLastInGrid = count > 4 && index === 3;
   const remainingCount = count > 4 ? count - 4 : 0;
   const isThirdVideo = count === 3 && index === 2;
   
-  // Với 3 video, video thứ 3 (index 2) sẽ full width
   const finalWidth = isThirdVideo ? MAX_GRID_WIDTH : itemWidth;
   const finalHeight = isThirdVideo ? 150 : itemHeight;
 
@@ -52,11 +53,34 @@ const VideoGridItem: React.FC<VideoGridItemProps> = ({
       }}
     >
       {sourceUri ? (
-        <Image
-          source={{ uri: sourceUri }}
-          style={{ width: '100%', height: '100%', borderRadius: 8 }}
-          resizeMode="cover"
-        />
+        <>
+          {isLoading && (
+            <View
+              style={{
+                position: 'absolute',
+                width: '100%',
+                height: '100%',
+                borderRadius: 8,
+                backgroundColor: '#000',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 1,
+              }}
+            >
+              <ActivityIndicator size="small" color="#9CA3AF" />
+            </View>
+          )}
+          <Video
+            source={{ uri: sourceUri }}
+            style={{ width: '100%', height: '100%', borderRadius: 8 }}
+            resizeMode="cover"
+            paused={true}
+            muted={true}
+            controls={false}
+            onLoad={() => setIsLoading(false)}
+            onError={() => setIsLoading(false)}
+          />
+        </>
       ) : (
         <View
           style={{
