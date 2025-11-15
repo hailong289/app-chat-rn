@@ -1,17 +1,20 @@
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
-import MainNavigator from './MainNavigator';
+import { NavigatorScreenParams } from '@react-navigation/native';
+import MainNavigator, { MainTabParamList } from './MainNavigator';
 import SearchPage from '../pages/search.page';
 import ChatPage from '../pages/chat.page';
+import AddContactPage from '../pages/add-contact.page';
 import HeaderSearchComponent from '../components/headers/headers-search.component';
 import HeaderChatComponent from '../components/headers/headers-chat.component';
 
 export type MainStackParamList = {
-    Main: undefined;
+    Main: NavigatorScreenParams<MainTabParamList> | undefined;
     Search: undefined;
     Chat: {
         roomId: string;
     };
+    AddContact: undefined;
 };
 
 const MainStack = createStackNavigator<MainStackParamList>();
@@ -47,6 +50,13 @@ const MainStackNavigator = () => {
                 options={{ 
                     headerShown: true,
                     header: (props) => <HeaderChatComponent {...props} />
+                }}
+            />
+            <MainStack.Screen 
+                name="AddContact" 
+                component={AddContactPage} 
+                options={{ 
+                    headerShown: false
                 }}
             />
         </MainStack.Navigator>

@@ -9,7 +9,7 @@ import messaging from '@react-native-firebase/messaging';
 import { Alert } from 'react-native';
 import Permission from '../libs/permission';
 import { FirebaseContextType } from '../types/firebase.type';
-import notifee, { AndroidStyle } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidStyle } from '@notifee/react-native';
 
 export const FirebaseContext = createContext<FirebaseContextType>({
   fcmToken: null,
@@ -31,12 +31,19 @@ export const FirebaseProvider = ({ children }: { children: ReactNode }) => {
         // Lắng nghe thông báo foreground
         const unsubscribeMessage = messaging().onMessage(async remoteMessage => {
           const { title, body } = remoteMessage.notification || {};
+          const { friend_request, push_type } = remoteMessage?.data || {};
           console.log('📩 Foreground message:', remoteMessage);
+          const channelId = await notifee.createChannel({
+            id: 'default',
+            name: 'Default Channel',
+            importance: push_type === 'friend_request' ? AndroidImportance.HIGH : AndroidImportance.DEFAULT, // Để nó hiện pop-up lên trên
+            sound: 'default', 
+          });
           await notifee.displayNotification({
             title: title || 'Thông báo',
             body: body || '',
             android: {
-              channelId: 'default',
+              channelId,
               smallIcon: 'ic_launcher',
               color: '#0E1AFA',
               pressAction: { id: 'open-chat' },
@@ -44,8 +51,8 @@ export const FirebaseProvider = ({ children }: { children: ReactNode }) => {
                 type: AndroidStyle.BIGPICTURE,
                 picture: require('@/src/assets/images/logo.png'), // Đường dẫn đến ảnh
               },
+              importance: push_type === 'friend_request' ? AndroidImportance.HIGH : AndroidImportance.DEFAULT
             },
-            data: remoteMessage.data || {}, // có thể dùng để điều hướng khi click
           });
         });
 

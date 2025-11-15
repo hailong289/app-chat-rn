@@ -25,6 +25,9 @@ interface HeaderSearchProps {
   showClearButton?: boolean;
   searchInputClassName?: string;
   searchContainerClassName?: string;
+  searchValue?: string;
+  onSearchChange?: (text: string) => void;
+  onSearchClear?: () => void;
 }
 
 const HeaderSearchComponent: React.FC<HeaderSearchProps> = ({
@@ -44,18 +47,34 @@ const HeaderSearchComponent: React.FC<HeaderSearchProps> = ({
   showClearButton = true,
   searchInputClassName = '',
   searchContainerClassName = '',
+  searchValue: searchValueProp,
+  onSearchChange,
+  onSearchClear,
 }) => {
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
-  const [searchValue, setSearchValue] = useState('');
+  const [internalSearchValue, setInternalSearchValue] = useState('');
+  
+  // Use controlled value if provided, otherwise use internal state
+  const isControlled = searchValueProp !== undefined;
+  const searchValue = isControlled ? searchValueProp : internalSearchValue;
 
   const handleClear = () => {
-    setSearchValue('');
+    if (isControlled) {
+      onSearchClear?.();
+    } else {
+      setInternalSearchValue('');
+    }
+    onSearchChange?.(''); 
     inputRef.current?.focus();
   };
 
   const handleSearchChange = (text: string) => {
-    setSearchValue(text);
+    if (isControlled) {
+      onSearchChange?.(text);
+    } else {
+      setInternalSearchValue(text);
+    }
   };
 
   useEffect(() => {

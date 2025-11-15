@@ -38,17 +38,15 @@ const useRoomStore = create<RoomState>()(
                 });
                 
                 const responseData = response.data as ApiResponse<PayloadGetRoomsSuccess | Room[]>;
-                const metadata = responseData?.metadata as Room[];
-                if (metadata && metadata.length > 0) {
-                    set({
-                        rooms: metadata as Room[],
-                        type: payload.type,
-                        isLoading: false,
-                    });
-                    await Promise.all(metadata.map(async (room) => {
-                        await db.setTable('rooms').upsert(room);
-                    }));
-                }
+                const metadata = responseData?.metadata as Room[] || [];
+                set({
+                    rooms: metadata as Room[],
+                    type: payload.type,
+                    isLoading: false,
+                });
+                await Promise.all(metadata.map(async (room) => {
+                    await db.setTable('rooms').upsert(room);
+                }));
                 payload.success();
             } catch (error) {
                 // Nếu lỗi, lấy dữ liệu từ db

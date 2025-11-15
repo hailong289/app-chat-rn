@@ -13,6 +13,7 @@ import { MainStackParamList } from '../navigations/MainStackNavigator';
 import useRoomStore from '../store/useRoom';
 import Helpers from '../libs/helpers';
 import { RefreshControl } from 'react-native';
+import { ImageAvatar } from '../components/chat/image-avatar.component';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -32,45 +33,6 @@ const stories = [
   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
 ];
 
-const messages = [
-  { id: '1', name: 'Jesus', text: 'Hello, how are you?', time: '10:30 AM' },
-  { id: '2', name: 'Mari', text: "Let's catch up later.", time: '9:15 AM' },
-  { id: '3', name: 'Kristin', text: 'Meeting at 3 PM.', time: 'Yesterday' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-  { id: '4', name: 'Lea', text: 'Happy Birthday!', time: '2 days ago' },
-
-];
-
 const Avatar = ({ src }: { src: any }) => (
   <Box className="items-center mr-4">
     <Image source={src} style={{ width: 64, height: 64, borderRadius: 32 }} />
@@ -83,6 +45,7 @@ const HomePage = () => {
   const navigation = useNavigation<NavigationProp>();
   const { rooms, getRooms, isLoading } = useRoomStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     getRooms({
@@ -171,37 +134,71 @@ const HomePage = () => {
           </TouchableOpacity>
         </HStack>
 
-        <ScrollView>
-          {rooms.map((item) => (
-            <TouchableOpacity 
-              className="py-4 border-b border-gray-200" 
-              key={item.id}
-              onPress={() => handleNavigateToChat(item.id)}
+        {rooms.length === 0 && !isLoading ? (
+          <VStack className="items-center justify-center py-20 px-5">
+            <FontAwesome name="comments" size={64} color="#9CA3AF" />
+            <Text className="text-[18px] font-semibold text-gray-500 mt-4 text-center">
+              Chưa có tin nhắn nào
+            </Text>
+            <Text className="text-[14px] text-gray-400 mt-2 text-center mb-6">
+              Hãy kết bạn để bắt đầu trò chuyện
+            </Text>
+            <TouchableOpacity
+              onPress={() => {
+                // Navigate to Contact tab
+                const tabNavigator = navigation.getParent();
+                if (tabNavigator) {
+                  (tabNavigator as any).navigate('AddContact');
+                }
+              }}
+              className="bg-[#42A59F] px-6 py-3 rounded-lg"
+              activeOpacity={0.7}
             >
-              <HStack className="items-center justify-between px-5" >
-                <HStack className="items-center flex-1 mr-2">
-                  <Image source={{ uri: item.avatar || 'https://avatar.iran.liara.run/public' }} style={{ width: 44, height: 44, borderRadius: 22, marginRight: 12 }} />
-                  <VStack className="flex-1">
-                    <Text className="font-bold text-typography-950 text-[16px]">{item.name}</Text>
-                    <Text 
-                      className="text-gray-400 text-[14px]" 
-                      numberOfLines={2}
-                      ellipsizeMode="tail"
-                    >
-                      {item.last_message?.content}
-                    </Text>
+              <Text className="text-white text-[16px] font-semibold">
+                Kết bạn ngay
+              </Text>
+            </TouchableOpacity>
+          </VStack>
+        ) : (
+          <ScrollView>
+            {rooms.map((item) => (
+              <TouchableOpacity 
+                className="py-4 border-b border-gray-200" 
+                key={item.id}
+                onPress={() => handleNavigateToChat(item.id)}
+              >
+                <HStack className="items-center justify-between px-5" >
+                  <HStack className="items-center flex-1 mr-2">
+                    <Box className="relative mr-2">
+                      <ImageAvatar
+                        src={item.avatar || 'https://avatar.iran.liara.run/public'}
+                        id={item.id}
+                        size={44}
+                        style={{ width: 50, height: 50, borderRadius: 25 }}
+                      />
+                    </Box>
+                    <VStack className="flex-1">
+                      <Text className="font-bold text-typography-950 text-[16px]">{item.name}</Text>
+                      <Text 
+                        className="text-gray-400 text-[14px]" 
+                        numberOfLines={2}
+                        ellipsizeMode="tail"
+                      >
+                        {item.last_message?.content}
+                      </Text>
+                    </VStack>
+                  </HStack>
+                  <VStack className="items-end">
+                    <Badge variant="solid" className='bg-red-600 rounded-full mb-1'>
+                      <BadgeText className='text-white'>{item.unread_count}</BadgeText>
+                    </Badge>
+                    <Text className="text-gray-400 text-[12px]">{item.last_message?.createdAt ? Helpers.formatTimeAgo(item.last_message?.createdAt) : ''}</Text>
                   </VStack>
                 </HStack>
-                <VStack className="items-end">
-                  <Badge variant="solid" className='bg-red-600 rounded-full mb-1'>
-                    <BadgeText className='text-white'>{item.unread_count}</BadgeText>
-                  </Badge>
-                  <Text className="text-gray-400 text-[12px]">{item.last_message?.createdAt ? Helpers.formatTimeAgo(item.last_message?.createdAt) : ''}</Text>
-                </VStack>
-              </HStack>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

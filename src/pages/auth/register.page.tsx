@@ -16,6 +16,7 @@ import DatePicker from 'react-native-date-picker'
 import { Constants } from "@/src/libs/constants";
 import useAuthStore from "@/src/store/useAuth";
 import { Toast } from "toastify-react-native";
+import { useFirebase } from "@/src/providers/firebase.provider";
 
 const RegisterPage = () => {
     const navigation = useNavigation<NavigationProp<RootStackParamList>>();
@@ -26,12 +27,12 @@ const RegisterPage = () => {
         confirm: "",
         gender: "male",
         dateOfBirth: Helpers.getDefaultDate(), // định dạng YYYY-MM-DD
-        type: "email" as "email" | "phone",
-        fcmToken: null as string | null,
+        type: "email" as "email" | "phone"
     });
     const [errors, setFieldErrors] = useState<Record<string, string>>({});
     const [open, setOpen] = useState(false);
     const { register, isLoading } = useAuthStore();
+    const { fcmToken } = useFirebase();
 
     const handleInputChange = (field: string, value: string | Date) => {
         setForm({ ...form, [field]: value });
@@ -73,7 +74,7 @@ const RegisterPage = () => {
             gender: parsedData.gender as "male" | "female" | "other",
             dateOfBirth: Helpers.formatDateToString(parsedData.dateOfBirth, 'YYYY-MM-DD'),
             type: parsedData.type,
-            fcmToken: parsedData.fcmToken,
+            fcmToken: fcmToken,
             success: () => {
                 Toast.show({
                     type: 'success',

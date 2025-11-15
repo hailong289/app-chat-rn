@@ -1,3 +1,5 @@
+import { User } from './user.type';
+
 export interface PayloadLogin {
   username: string;
   password: string;
@@ -23,21 +25,6 @@ export interface PayloadRegister {
 export interface PayloadLogout {
     success: (data?: any) => void;
     error: (error?: any) => void;
-}
-
-
-export interface User {
-  _id: string; // mongodb objectId
-  id: string;
-  fullname: string;
-  slug: string;
-  email?: string; 
-  phone: string;
-  avatar: string;
-  gender: 'male' | 'female' | 'other'; 
-  dateOfBirth: string;
-  createdAt: string;  
-  updatedAt: string;   
 }
 
 export interface AuthMetadata {

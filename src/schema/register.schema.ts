@@ -69,8 +69,7 @@ const registerSchema = Joi.object({
     'any.required': 'Giới tính không được để trống',
     'string.empty': 'Giới tính không được để trống',
     'any.only': 'Giới tính không hợp lệ',
-  }),
-  fcmToken: Joi.string().optional().allow(null),
+  })
 });
 
 export default registerSchema;

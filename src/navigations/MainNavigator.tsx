@@ -12,7 +12,9 @@ export type MainTabParamList = {
     Home: undefined;
     SettingsPage: undefined;
     Notification: undefined;
-    Contact: undefined;
+    Contact: {
+        activeTab?: 'friends' | 'groups' | 'requests' | 'pending';
+    } | undefined;
 };
 
 
@@ -58,23 +60,7 @@ const MainNavigator = () => (
         <MainTab.Screen
             name="Contact" component={ContactPage}
             options={{
-                header(props) {
-                    return <HeaderSearchComponent 
-                    rightIcon="user-plus"
-                    onRightPress={() => {
-                        props.navigation.navigate('AddContact');
-                    }}
-                    searchPlaceholder="Tìm kiếm người dùng..."
-                    autoFocus={true}
-                    backgroundColor="#42A59F"
-                    statusBarStyle="light-content"
-                    height={60}
-                    searchHeight={44}
-                    showStatusBar={true}
-                    className=""
-                    searchInputClassName="text-gray-700 text-[16px]"
-                    {...props} />
-                },
+                headerShown: false,
                 tabBarIcon: ({ color, size }) => <FontAwesome name="users" size={size} color={color} />,
                 tabBarLabel: 'Danh bạ',
             }} />

@@ -3,6 +3,8 @@ export interface PayloadGetRooms {
     limit: number;
     offset: number;
     type: 'private' | 'group';
+    success: (data: any) => void;
+    error: (error: any) => void;
 }
 
 export interface RoomMember {
