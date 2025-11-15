@@ -49,7 +49,6 @@ export const ImageAvatar: React.FC<ImageAvatarProps> = ({ src, id, size, style }
   const handleError = () => {
     setImageErrors(prev => new Set(prev).add(id));
     setIsLoading(false);
-    console.log('image error', id);
   };
 
   const hasError = imageErrors.has(id);

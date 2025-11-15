@@ -27,16 +27,7 @@ const ContactPage = () => {
     requests: '',
     pending: '',
   });
-  const [tabKey, setTabKey] = useState(0);
-  const prevTabRef = useRef<TabType>(activeTab);
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
-
-  useEffect(() => {
-    if (prevTabRef.current !== activeTab) {
-      setTabKey(prev => prev + 1);
-      prevTabRef.current = activeTab;
-    }
-  }, [activeTab]);
 
   const currentSearchQuery = searchQueries[activeTab];
 
@@ -106,16 +97,16 @@ const ContactPage = () => {
       {/* Tab Content */}
       <View style={{ paddingBottom: 20 }}>
         {activeTab === 'friends' && (
-          <ContactTabFriends key={`friends-${tabKey}`} searchQuery={searchQueries.friends} />
+          <ContactTabFriends key="friends" searchQuery={searchQueries.friends} />
         )}
         {activeTab === 'groups' && (
-          <ContactTabGroups key={`groups-${tabKey}`} searchQuery={searchQueries.groups} />
+          <ContactTabGroups key="groups" searchQuery={searchQueries.groups} />
         )}
         {activeTab === 'requests' && (
-          <ContactTabRequest key={`requests-${tabKey}`} />
+          <ContactTabRequest key="requests" searchQuery={searchQueries.requests} />
         )}
         {activeTab === 'pending' && (
-          <ContactTabPending key={`pending-${tabKey}`} />
+          <ContactTabPending key="pending" searchQuery={searchQueries.pending} />
         )}
       </View>
       </ScrollView>

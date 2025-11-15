@@ -53,6 +53,7 @@ export const CreateGroupChatModal: React.FC<CreateGroupChatModalProps> = ({
   const { createGroupRoom, isCreatingGroupRoom } = useRoomStore();
 
   useEffect(() => {
+    if (!isOpen) return;
     getFriends({
       limit: 10,
       page: 1,
@@ -64,7 +65,7 @@ export const CreateGroupChatModal: React.FC<CreateGroupChatModalProps> = ({
         // setIsLoading(false);
       },
     });
-  }, []);
+  }, [isOpen]);
 
   const validateField = (field: string, value: string) => {
     const fieldSchema = createGroupSchema.extract(field);

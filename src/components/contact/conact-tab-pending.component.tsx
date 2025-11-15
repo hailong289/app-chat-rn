@@ -10,10 +10,12 @@ import useContactStore from '@/src/store/useContact';
 import { contactMockFriendRequests } from '@/src/pages/contact/contact.mock';
 import { ImageAvatar } from '../chat/image-avatar.component';
 
+interface ContactTabPendingProps {
+  searchQuery: string;
+}
 
-export const ContactTabPending: React.FC= () => {
+export const ContactTabPending: React.FC<ContactTabPendingProps> = ({ searchQuery }) => {
   const { getSentFriendRequests, loading, sentFriendRequests } = useContactStore();
-  const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -32,8 +34,16 @@ export const ContactTabPending: React.FC= () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (searchQuery.trim().length > 0) {
+      const timer = setTimeout(() => {
+        setPage(1);
+        fetchData();
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      fetchData();
+    }
+  }, [searchQuery]);
 
   const onRefresh = () => {
     setRefreshing(true);

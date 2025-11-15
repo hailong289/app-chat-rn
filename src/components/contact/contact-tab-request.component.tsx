@@ -11,8 +11,11 @@ import useContactStore from '@/src/store/useContact';
 import { Toast } from 'toastify-react-native';
 import { ImageAvatar } from '../chat/image-avatar.component';
 
-export const ContactTabRequest: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
+interface ContactTabRequestProps {
+  searchQuery: string;
+}
+
+export const ContactTabRequest: React.FC<ContactTabRequestProps> = ({ searchQuery }) => {
   const [page, setPage] = useState(1);
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
@@ -33,8 +36,16 @@ export const ContactTabRequest: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (searchQuery.trim().length > 0) {
+      const timer = setTimeout(() => {
+        setPage(1);
+        fetchData();
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      fetchData();
+    }
+  }, [searchQuery]);
 
   const onRefresh = () => {
     setRefreshing(true);

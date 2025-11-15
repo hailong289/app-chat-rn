@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Image, Text, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
+import { Text, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Box } from '@/src/components/ui/box';
 import { HStack } from '@/src/components/ui/hstack';
