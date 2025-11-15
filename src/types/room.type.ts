@@ -2,11 +2,18 @@ export interface PayloadGetRooms {
     q?: string;
     limit: number;
     offset: number;
-    type: 'private' | 'group';
+    type: 'private' | 'group' | 'channel' | 'all';
     success: (data: any) => void;
     error: (error: any) => void;
 }
 
+export interface PayloadCreateGroupRoom {
+    name: string;
+    members: string[];
+    type: 'group' | 'private' | 'channel';
+    success: (data: any) => void;
+    error: (error: any) => void;
+}
 export interface RoomMember {
     id: string;
     name: string;

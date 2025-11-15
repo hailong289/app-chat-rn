@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Image, Text, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Box } from '@/src/components/ui/box';
@@ -9,23 +9,51 @@ import Helpers from '@/src/libs/helpers';
 import { NavigationProp, useNavigation } from '@react-navigation/native';
 import { MainStackParamList } from '@/src/navigations/MainStackNavigator';
 import { ImageAvatar } from '../chat/image-avatar.component';
+import { CreateGroupChatModal } from '../modals/create-group-chat';
+import { CreateGroupFormValues } from '@/src/schema/group.schema';
 
 
-export const ContactTabGroups: React.FC = () => {
+export const ContactTabGroups: React.FC<{ searchQuery: string }> = ({ searchQuery }) => {
   const [refreshing, setRefreshing] = useState(false);
   const navigation = useNavigation<NavigationProp<MainStackParamList>>();
   const [offset, setOffset] = useState(0);
   const { 
     groups, 
     loading: { groups: isLoadingGroups }, 
-    getGroups 
+    getGroups,
   } = useContactStore();
 
-  const fetchData = () => {
+  const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
+  const handleOpenCreateGroup = useCallback(() => {
+    setIsCreateGroupModalOpen(true);
+  }, []);
+
+  const handleCloseCreateGroup = useCallback(() => {
+    setIsCreateGroupModalOpen(false);
+  }, []);
+
+  const handleAcceptCreateGroup = useCallback((payload: CreateGroupFormValues) => {
+    setIsCreateGroupModalOpen(false);
+  }, []);
+
+  // Search groups
+  useEffect(() => {
+    if (searchQuery.trim().length > 0) {
+      const timer = setTimeout(() => {
+        setOffset(0);
+        fetchGroups();
+      }, 500);
+      return () => clearTimeout(timer);
+    } else {
+      fetchGroups();
+    }
+  }, [searchQuery]);
+
+  const fetchGroups = () => {
     getGroups({
       limit: 10,
       offset: offset,
-      q: '',
+      q: searchQuery,
       type: 'group',
       success: (data) => {
         setRefreshing(false);
@@ -34,15 +62,12 @@ export const ContactTabGroups: React.FC = () => {
         setRefreshing(false);
       },
     });
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
+  }
 
   const onRefresh = () => {
+    console.log('onRefresh groups');
     setRefreshing(true);
-    fetchData();
+    fetchGroups();
   };
 
   if (isLoadingGroups && !refreshing) {
@@ -63,7 +88,7 @@ export const ContactTabGroups: React.FC = () => {
       <VStack>
         <TouchableOpacity
           activeOpacity={0.85}
-          onPress={ () => {}}
+          onPress={handleOpenCreateGroup}
           className="mx-5 mt-4 mb-3 rounded-2xl flex-row items-center justify-center"
           style={{
             backgroundColor: '#42A59F',
@@ -130,6 +155,11 @@ export const ContactTabGroups: React.FC = () => {
           ))
         )}
       </VStack>
+      <CreateGroupChatModal
+        isOpen={isCreateGroupModalOpen}
+        onClose={handleCloseCreateGroup}
+        onAccept={handleAcceptCreateGroup}
+      />
     </ScrollView>
   );
 };

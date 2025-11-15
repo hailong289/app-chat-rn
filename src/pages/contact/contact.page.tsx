@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ScrollView, TouchableOpacity, Text, View } from 'react-native';
 import { HStack } from '@/src/components/ui/hstack';
 import { ContactTabFriends } from '@/src/components/contact/contact-tab-friends.component';
@@ -10,12 +10,8 @@ import {
   contactMockFriendRequests,
   contactMockGroups,
 } from './contact.mock';
-import { CreateGroupChatModal } from '@/src/components/modals/create-group-chat';
-import type { CreateGroupFormValues } from '@/src/schema/group.schema';
-import { Toast } from 'toastify-react-native';
 import { MainTabParamList } from '@/src/navigations/MainNavigator';
-import { NavigationProp, RouteProp, useNavigation, useRoute } from '@react-navigation/native';
-import useContactStore from '@/src/store/useContact';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import HeaderSearchComponent from '@/src/components/headers/headers-search.component';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/src/navigations/MainStackNavigator';
@@ -25,39 +21,31 @@ type TabType = 'friends' | 'groups' | 'requests' | 'pending';
 const ContactPage = () => {
   const route = useRoute<RouteProp<MainTabParamList, 'Contact'>>();
   const [activeTab, setActiveTab] = useState<TabType>((route.params?.activeTab as TabType) || 'friends');
-  const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQueries, setSearchQueries] = useState<Record<TabType, string>>({
+    friends: '',
+    groups: '',
+    requests: '',
+    pending: '',
+  });
+  const [tabKey, setTabKey] = useState(0);
+  const prevTabRef = useRef<TabType>(activeTab);
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
-  const friendsForModal = useMemo(
-    () =>
-      contactMockFriends.map((friend) => ({
-        id: friend.id,
-        fullname: friend.fullname,
-        avatar: friend.avatar,
-      })),
-    []
-  );
 
-  const handleOpenCreateGroup = useCallback(() => {
-    setIsCreateGroupModalOpen(true);
-  }, []);
+  useEffect(() => {
+    if (prevTabRef.current !== activeTab) {
+      setTabKey(prev => prev + 1);
+      prevTabRef.current = activeTab;
+    }
+  }, [activeTab]);
 
-  const handleCloseCreateGroup = useCallback(() => {
-    setIsCreateGroupModalOpen(false);
-  }, []);
+  const currentSearchQuery = searchQueries[activeTab];
 
-  const handleSubmitCreateGroup = useCallback((payload: CreateGroupFormValues) => {
-    Toast.show({
-      type: 'success',
-      text1: 'Tạo nhóm thành công',
-      position: 'top',
-      visibilityTime: 2000,
-      autoHide: true,
-    });
-    setIsCreateGroupModalOpen(false);
-    // TODO: Kết nối API tạo nhóm tại đây
-    console.log('Create group payload:', payload);
-  }, []);
+  const handleSearchChange = (text: string) => {
+    setSearchQueries(prev => ({
+      ...prev,
+      [activeTab]: text,
+    }));
+  };
 
   const tabs = [
     { key: 'friends' as TabType, label: 'Bạn bè', count: contactMockFriends.length },
@@ -82,8 +70,8 @@ const ContactPage = () => {
           showStatusBar={true}
           className=""
           searchInputClassName="text-gray-700 text-[16px]"
-          onSearchChange={(text) => setSearchQuery(text)}
-          searchValue={searchQuery}
+          onSearchChange={handleSearchChange}
+          searchValue={currentSearchQuery}
         />
       <ScrollView className='flex-1 bg-white'>
       {/* Tab Navigation */}
@@ -118,27 +106,19 @@ const ContactPage = () => {
       {/* Tab Content */}
       <View style={{ paddingBottom: 20 }}>
         {activeTab === 'friends' && (
-          <ContactTabFriends searchQuery={searchQuery} />
+          <ContactTabFriends key={`friends-${tabKey}`} searchQuery={searchQueries.friends} />
         )}
         {activeTab === 'groups' && (
-          <ContactTabGroups />
+          <ContactTabGroups key={`groups-${tabKey}`} searchQuery={searchQueries.groups} />
         )}
         {activeTab === 'requests' && (
-          <ContactTabRequest
-          />
+          <ContactTabRequest key={`requests-${tabKey}`} />
         )}
         {activeTab === 'pending' && (
-          <ContactTabPending />
+          <ContactTabPending key={`pending-${tabKey}`} />
         )}
       </View>
       </ScrollView>
-      <CreateGroupChatModal
-        isOpen={isCreateGroupModalOpen}
-        onClose={handleCloseCreateGroup}
-        onSubmit={handleSubmitCreateGroup}
-        friends={friendsForModal}
-        defaultSelectedIds={[]}
-      />
     </>
   );
 };

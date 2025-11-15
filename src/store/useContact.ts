@@ -4,6 +4,7 @@ import { User } from "../types/user.type";
 import ContactService from "../service/contact.service";
 import RoomService from "../service/room.service";
 import { PayloadGetRooms, Room } from "../types/room.type";
+import db from "../libs/db";
 
 
 
@@ -171,20 +172,52 @@ const useContactStore = create<ContactState>()(
         getGroups: async (payload: PayloadGetRooms) => {
             set({ loading: { ...get().loading, groups: true } });
             try {
+                db.enableLog(true);
+                if (payload.q) { // Nếu có từ khóa tìm kiếm, lấy dữ liệu từ db
+                    const roomGroupDb = await db.setTable('rooms')
+                    .orderBy('updatedAt', 'ASC')
+                    .limit(payload.limit)
+                    .offset(payload.offset)
+                    .where('type', '=', 'group')
+                    .where('name', 'like', `%${payload.q}%`)
+                    .get() as unknown as Room[];
+                    set({
+                        groups: roomGroupDb,
+                        loading: { ...get().loading, groups: false }
+                    });
+                    if (roomGroupDb.length > 0) {
+                        payload.success(roomGroupDb);
+                        return;
+                    }
+                } // Nếu không có từ khóa tìm kiếm, lấy dữ liệu từ api
+
                 const response = await RoomService.getGroupRooms({
                     limit: payload.limit,
                     offset: payload.offset,
                     q: payload.q,
                     type: 'group',
                 });
-                const roomsGroup = response?.data?.metadata || [];
+                const roomsGroup = response?.data?.metadata as Room[] || [];
+                Promise.all(roomsGroup.map((room: Room) => {
+                    db.setTable('rooms').upsert(room);
+                }));
                 set({
-                    groups: roomsGroup as Room[],
+                    groups: roomsGroup,
                     loading: { ...get().loading, groups: false }
                 });
                 payload.success(true);
             } catch (error) {
-                set({ loading: { ...get().loading, groups: false } });
+                // Nếu lỗi, lấy dữ liệu từ db
+                const roomGroupDb = await db.setTable('rooms')
+                .orderBy('updatedAt', 'ASC')
+                .limit(payload.limit)
+                .offset(payload.offset)
+                .where('type', '=', 'group')
+                .get() as unknown as Room[];
+                set({
+                    groups: roomGroupDb,
+                    loading: { ...get().loading, groups: false }
+                });
                 payload.error(error as any);
             }
         },

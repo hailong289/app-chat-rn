@@ -47,6 +47,9 @@ const useMessageStore = create<MessageState>()(
                 isMine: true,
                 isRead: true,
                 status: attachments && attachments.length > 0 ? "uploading" : "pending",
+                hiddenByMe: false,
+                hiddenAt: null,
+                isDeleted: false,
              };
 
              // Thêm dữ liệu tạm vào messages để hiển thị ngay

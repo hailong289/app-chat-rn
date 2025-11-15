@@ -15,7 +15,6 @@ interface ContactTabFriendsProps {
 export const ContactTabFriends: React.FC<ContactTabFriendsProps> = ({ searchQuery }) => {
   const { getFriends, loading: { friends: isLoadingFriends }, friends } = useContactStore();
   const [page, setPage] = useState(1);
-  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchData = () => {
@@ -42,7 +41,7 @@ export const ContactTabFriends: React.FC<ContactTabFriendsProps> = ({ searchQuer
     } else {
       fetchData();
     }
-  }, [searchQuery, page]);
+  }, [searchQuery]);
 
   const onRefresh = () => {
     setRefreshing(true);

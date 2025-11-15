@@ -8,18 +8,22 @@ import {
   ModalFooter,
   ModalHeader,
 } from "../ui/modal";
-import { Button, ButtonText } from "../ui/button";
+import { Button, ButtonSpinner, ButtonText } from "../ui/button";
 import { Input, InputField } from "../ui/input";
 import { Box } from "../ui/box";
 import { HStack } from "../ui/hstack";
 import { VStack } from "../ui/vstack";
 import FontAwesome from "@react-native-vector-icons/fontawesome";
 import { Toast } from "toastify-react-native";
-import { User } from "@/src/types/auth.type";
+import { User } from "@/src/types/user.type";
 import {
   createGroupSchema,
   CreateGroupFormValues,
 } from "@/src/schema/group.schema";
+import useContactStore from "@/src/store/useContact";
+import { FormControl, FormControlError, FormControlErrorIcon, FormControlErrorText, FormControlLabel, FormControlLabelText } from "../ui/form-control";
+import { AlertCircleIcon } from "../ui/icon";
+import useRoomStore from "@/src/store/useRoom";
 
 type Friend = Pick<User, "id" | "fullname" | "avatar"> & {
   username?: string;
@@ -28,100 +32,125 @@ type Friend = Pick<User, "id" | "fullname" | "avatar"> & {
 type CreateGroupChatModalProps = {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (payload: CreateGroupFormValues) => void;
-  friends: Friend[];
-  defaultSelectedIds?: string[];
-  isLoading?: boolean;
+  onAccept: (payload: CreateGroupFormValues) => void;
 };
 
 export const CreateGroupChatModal: React.FC<CreateGroupChatModalProps> = ({
   isOpen,
   onClose,
-  onSubmit,
-  friends,
-  defaultSelectedIds = [],
-  isLoading = false,
+  onAccept,
 }) => {
-  const [formValues, setFormValues] = useState<CreateGroupFormValues>({
+  const {
+    friends,
+    getFriends,
+    loading: { friends: isLoadingFriends },
+  } = useContactStore();
+  const [form, setForm] = useState<CreateGroupFormValues>({
     name: "",
-    members: defaultSelectedIds,
+    members: [],
   });
+  const [errors, setFieldErrors] = useState<Record<string, string>>({});
+  const { createGroupRoom, isCreatingGroupRoom } = useRoomStore();
 
   useEffect(() => {
-    setFormValues((prev) => ({
-      ...prev,
-      members: defaultSelectedIds,
-    }));
-  }, [defaultSelectedIds, isOpen]);
-
-  const handleClose = useCallback(() => {
-    setFormValues({
-      name: "",
-      members: defaultSelectedIds,
+    getFriends({
+      limit: 10,
+      page: 1,
+      search: '',
+      success: (data) => {
+        // setIsLoading(false);
+      },
+      error: (error) => {
+        // setIsLoading(false);
+      },
     });
-    onClose();
-  }, [defaultSelectedIds, onClose]);
-
-  const handleChangeGroupName = useCallback((value: string) => {
-    setFormValues((prev) => ({
-      ...prev,
-      name: value,
-    }));
   }, []);
 
-  const toggleFriend = useCallback(
-    (friendId: string) => {
-      setFormValues((prev) => {
-        const exists = prev.members.includes(friendId);
+  const validateField = (field: string, value: string) => {
+    const fieldSchema = createGroupSchema.extract(field);
+    const { error } = fieldSchema.validate(value);
+    setFieldErrors((prev) => ({
+        ...prev,
+        [field]: error ? error.details[0].message : '',
+    }));
+  };
+
+
+  const handleClose = useCallback(() => {
+    setForm({
+      name: "",
+      members: [],
+    });
+    onClose();
+  }, [onClose]);
+
+  const handleInputChange = (field: string, value: string) => {
+    if (field === 'members') {
+      setForm((prev) => {
+        const exists = prev.members.includes(value);
         const members = exists
-          ? prev.members.filter((id) => id !== friendId)
-          : [...prev.members, friendId];
+          ? prev.members.filter((id) => id !== value)
+          : [...prev.members, value];
 
         return {
           ...prev,
           members,
         };
       });
-    },
-    []
-  );
-
-  const isValid = useMemo(
-    () =>
-      !createGroupSchema.validate(
-        {
-          name: formValues.name.trim(),
-          members: formValues.members,
-        },
-        { abortEarly: true }
-      ).error,
-    [formValues]
-  );
-
-  const handleSubmit = useCallback(() => {
-    const payload: CreateGroupFormValues = {
-      name: formValues.name.trim(),
-      members: formValues.members,
-    };
-
-    const { error, value } = createGroupSchema.validate(payload, {
-      abortEarly: false,
-    });
-
-    if (error) {
-      const message = error.details?.[0]?.message ?? "Dữ liệu không hợp lệ";
-      Toast.show({
-        type: "error",
-        text1: message,
-        position: "top",
-        visibilityTime: 2000,
-        autoHide: true,
-      });
       return;
     }
+    setForm({ ...form, [field]: value });
+  };
 
-    onSubmit(value as CreateGroupFormValues);
-  }, [formValues, onSubmit]);
+  const handleSubmit = () => {
+    const { error, value: parsedData } = createGroupSchema.validate(form, { abortEarly: false });
+    if (error) {
+        const newErrors: any = {};
+        error.details.forEach((err) => {
+            newErrors[err.path[0]] = err.message;
+        });
+        setFieldErrors(newErrors);
+        Toast.show({
+          type: 'error',
+          text1: 'Lỗi',
+          text2: newErrors.name || newErrors.members,
+          position: 'top',
+          visibilityTime: 2000,
+          autoHide: true,
+        });
+        return;
+    }
+    createGroupRoom({
+      name: parsedData.name,
+      members: parsedData.members,
+      type: 'group',
+      success: (data) => {
+        Toast.show({
+          type: 'success',
+          text1: 'Tạo nhóm thành công',
+          text2: 'Nhóm đã được tạo thành công',
+          position: 'top',
+          visibilityTime: 1000,
+          autoHide: true,
+        });
+        setForm({
+          name: "",
+          members: [],
+        });
+        onAccept(parsedData as CreateGroupFormValues);
+      },
+      error: (error) => {
+        Toast.show({
+          type: 'error',
+          text1: 'Tạo nhóm thất bại',
+          text2: error.message || 'Vui lòng thử lại sau.',
+          position: 'top',
+          visibilityTime: 1000,
+          autoHide: true,
+        });
+      }
+    });
+  };
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="lg">
@@ -144,22 +173,35 @@ export const CreateGroupChatModal: React.FC<CreateGroupChatModalProps> = ({
         <ModalBody>
           <VStack className="gap-4">
             <VStack>
-              <Text className="text-base font-medium text-gray-700">
-                Tên nhóm
-              </Text>
-              <Input className="mt-2 h-[50px] border-gray-300 rounded-[16px]" size="md" variant="outline">
-                <InputField
-                  placeholder="Nhập tên nhóm"
-                  value={formValues.name}
-                  onChangeText={handleChangeGroupName}
-                  className="text-gray-600"
-                />
-              </Input>
+            <FormControl
+                  isInvalid={!!errors.name}
+                  size="md"
+                  isDisabled={false}
+                  isReadOnly={false}
+                  isRequired={false}
+              >
+                  <Input className="my-1 h-[50px] border-gray-300 rounded-[20px]" size="md" variant="outline">
+                      <InputField
+                          type="text"
+                          placeholder="Nhập tên nhóm"
+                          value={form.name}
+                          className="text-gray-500"
+                          onChangeText={(text) => handleInputChange('name', text)}
+                          onBlur={() => validateField('name', form.name)}
+                      />
+                  </Input>
+                  <FormControlError>
+                      <FormControlErrorIcon as={AlertCircleIcon} className="text-red-500" />
+                      <FormControlErrorText className="text-red-500">
+                          {errors.name}
+                      </FormControlErrorText>
+                  </FormControlError>
+              </FormControl>
             </VStack>
 
             <VStack className="flex-1">
               <Text className="text-base font-medium text-gray-700">
-                Chọn thành viên
+                Chọn thành viên (ít nhất 3 thành viên)
               </Text>
               {friends.length === 0 ? (
                 <Box className="items-center justify-center py-10">
@@ -172,12 +214,12 @@ export const CreateGroupChatModal: React.FC<CreateGroupChatModalProps> = ({
                 <ScrollView className="mt-2 max-h-[300px]">
                   <VStack className="gap-3">
                     {friends.map((friend) => {
-                      const isSelected = formValues.members.includes(friend.id);
+                      const isSelected = form.members.includes(friend.id);
                       return (
                         <TouchableOpacity
                           key={friend.id}
                           activeOpacity={0.8}
-                          onPress={() => toggleFriend(friend.id)}
+                          onPress={() => handleInputChange('members', friend.id)}
                           className="rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-sm"
                         >
                           <HStack className="items-center justify-between">
@@ -203,9 +245,9 @@ export const CreateGroupChatModal: React.FC<CreateGroupChatModalProps> = ({
                                 <Text className="text-base font-semibold text-gray-900">
                                   {friend.fullname}
                                 </Text>
-                                {friend.username ? (
+                                {friend.slug ? (
                                   <Text className="text-sm text-gray-500">
-                                    @{friend.username}
+                                    @{friend.slug}
                                   </Text>
                                 ) : null}
                               </VStack>
@@ -237,14 +279,15 @@ export const CreateGroupChatModal: React.FC<CreateGroupChatModalProps> = ({
             action="primary"
             className="mr-3 border-gray-300 border-none"
             onPress={handleClose}
-            isDisabled={isLoading}
+            isDisabled={isCreatingGroupRoom}
           >
             <ButtonText>Hủy</ButtonText>
           </Button>
           <Button
             onPress={handleSubmit}
-            isDisabled={!isValid || isLoading}
+            isDisabled={isCreatingGroupRoom}
           >
+            {isCreatingGroupRoom && <ButtonSpinner color="gray" />}
             <ButtonText className="text-white">Tạo nhóm</ButtonText>
           </Button>
         </ModalFooter>

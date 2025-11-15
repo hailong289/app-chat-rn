@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import RoomService from "../service/room.service";
-import { Room, PayloadGetRooms, PayloadGetRoomsCallback, PayloadGetRoomsSuccess } from "../types/room.type";
+import { Room, PayloadGetRooms, PayloadGetRoomsCallback, PayloadGetRoomsSuccess, PayloadCreateGroupRoom } from "../types/room.type";
 import ApiResponse from "../types/response.type";
-import DB from "../libs/db";
 import db from "../libs/db";
 
 interface RoomState {
@@ -10,13 +9,14 @@ interface RoomState {
     room: Room | null;
     isLoading: boolean;
     total: number;
-    type: 'private' | 'group';
+    isCreatingGroupRoom: boolean;
     getRooms: (payload: PayloadGetRooms & PayloadGetRoomsCallback) => Promise<void>;
     getRoomsByType: (type: string, limit: number, offset: number) => Promise<Room[]>;
     addRoom: (room: Room) => void;
     upsertRoom: (data: Room) => Promise<void>;
     removeRoom: (roomId: string) => void;
     clearRooms: () => void;
+    createGroupRoom: (payload: PayloadCreateGroupRoom) => Promise<void>;
 }
 
 const useRoomStore = create<RoomState>()(
@@ -25,11 +25,10 @@ const useRoomStore = create<RoomState>()(
         room: null,
         isLoading: false,
         total: 0,
-        type: 'private',
+        isCreatingGroupRoom: false,
         getRooms: async (payload) => {
             set({ isLoading: true });
             try {
-        
                 const response = await RoomService.getRooms({
                     q: payload.q,
                     limit: payload.limit,
@@ -41,10 +40,9 @@ const useRoomStore = create<RoomState>()(
                 const metadata = responseData?.metadata as Room[] || [];
                 set({
                     rooms: metadata as Room[],
-                    type: payload.type,
                     isLoading: false,
                 });
-                await Promise.all(metadata.map(async (room) => {
+                Promise.all(metadata.map(async (room) => {
                     await db.setTable('rooms').upsert(room);
                 }));
                 payload.success();
@@ -78,48 +76,43 @@ const useRoomStore = create<RoomState>()(
             }));
         },
         upsertRoom: async (room: Room) => {
-            db.enableLog(true);
-            try {
-                const roomDB = await db.setTable('rooms').where('id', '=', room.id).getOne() as unknown as Room;
-                if (roomDB) {
-                    // cập nhật room trong state
-                    set((state) => ({
-                        rooms: state.rooms.map((r) => r.id === room.id ? room : r),
-                    }));
-                    // cập nhật room trong db
-                    await db.setTable('rooms').where('id', '=', room.id).update({
-                        ...room,
-                        updatedAt: Date.now(),
-                    });
-                    return;
-                }
-                await db.setTable('rooms').insert(room);
-                // Thêm room vào state
-                set((state) => ({
-                    rooms: [room, ...state.rooms],
-                }));
-            } catch (error) {
-                console.error("Error upserting room:", error);
-                // Nếu lỗi, lấy dữ liệu từ api
-                get().getRoomsByType(room.type, 50, 0);
-            } finally {
-                console.log("upsertRoom success", db.getLog());
-            }
+            await get().getRoomsByType('all', 20, 0);
         },
         removeRoom: async (roomId) => {
             await db.setTable('rooms').where('roomId', '=', roomId).delete();
-            get().getRoomsByType(get().type, 50, 0);
+            get().getRoomsByType('all', 50, 0);
         },
         clearRooms: () => {
             set({
                 rooms: [],
                 total: 0,
-                type: 'private',
             });
         },
-    }),
-    
+        createGroupRoom: async (payload: PayloadCreateGroupRoom) => {
+            set({ isCreatingGroupRoom: true });
+            try {
+                const response = await RoomService.createGroupRoom(payload);
+                const responseData = response.data.metadata as Room;
+                try {
+                    await db.setTable('rooms').upsert(responseData);
+                } catch (error) {
+                    console.error("Error upserting room:", error);
+                }
+                const rooms = get().rooms;
+                const existingRoom = rooms.find((r) => r.id === responseData.id);
+                if (!existingRoom) {
+                    rooms.unshift(responseData);
+                }
+                set((state) => ({
+                    rooms: rooms,
+                }));
+                payload.success(responseData as Room);
+            } catch (error) {
+                payload.error(error);
+            } finally {
+                set({ isCreatingGroupRoom: false });
+            }
+        }
+    })
 );
-
 export default useRoomStore;
-

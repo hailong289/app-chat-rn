@@ -17,21 +17,21 @@ import { ImageAvatar } from '../components/chat/image-avatar.component';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
-const stories = [
-  { id: 'me', label: 'Trạng thái của tôi', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'j', label: 'Jesus', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'm', label: 'Mari', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'k', label: 'Kristin', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-  { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
-];
+// const stories = [
+//   { id: 'me', label: 'Trạng thái của tôi', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'j', label: 'Jesus', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'm', label: 'Mari', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'k', label: 'Kristin', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+//   { id: 'l', label: 'Lea', avatar: 'https://avatar.iran.liara.run/public' },
+// ];
 
 const Avatar = ({ src }: { src: any }) => (
   <Box className="items-center mr-4">
@@ -45,41 +45,32 @@ const HomePage = () => {
   const navigation = useNavigation<NavigationProp>();
   const { rooms, getRooms, isLoading } = useRoomStore();
   const [refreshing, setRefreshing] = useState(false);
-  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+  const [offset, setOffset] = useState(0);
 
   useEffect(() => {
+    fetchRooms();
+  }, []);
+
+  const fetchRooms = async () => {
     getRooms({
-      limit: 10,
-      offset: 0,
-      type: 'private',
+      limit: 20,
+      offset: offset,
+      type: 'all',
       success: () => {
         console.log('success');
+        setRefreshing(false);
       },
       error: (error) => {
         console.log('error', error);
+        setRefreshing(false);
       },
     });
-  }, []);
+  }
 
   const onRefresh = async () => {
     setRefreshing(true);
-    try {
-      await getRooms({
-        limit: 10,
-        offset: 0,
-        type: 'private',
-        success: () => {
-          console.log('refresh success');
-          setRefreshing(false);
-        },
-        error: (error) => {
-          console.log('refresh error', error);
-          setRefreshing(false);
-        },
-      });
-    } catch (error) {
-      setRefreshing(false);
-    }
+    fetchRooms();
+    setRefreshing(false);
   };
 
   const handleNavigateToChat = (roomId: string) => {
@@ -106,13 +97,13 @@ const HomePage = () => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
-        <HStack className="items-center justify-between mb-4 px-5">
+        {/* <HStack className="items-center justify-between mb-4 px-5">
           <Box>
             <Text className="text-[20px] font-bold text-typography-950">Hoạt động</Text>
           </Box>
-        </HStack>
+        </HStack> */}
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4 px-5">
+        {/* <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4 px-5">
           {stories.map((s) => (
             <Box className="items-center mr-4" style={{ width: 64 }} key={Math.random().toString(36).substring(7)}>
               <Image source={{ uri: s.avatar }} style={{ width: 64, height: 64, borderRadius: 32 }} />
@@ -125,7 +116,7 @@ const HomePage = () => {
               </Text>
             </Box>
           ))}
-        </ScrollView>
+        </ScrollView> */}
 
         <HStack className="items-center justify-between mb-4 px-5">
           <Text className="text-[20px] font-bold text-typography-950">Tin nhắn (10)</Text>

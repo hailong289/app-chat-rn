@@ -8,18 +8,18 @@ import { VStack } from '@/src/components/ui/vstack';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import useRoomStore from '@/src/store/useRoom';
 import { MainStackParamList } from '@/src/navigations/MainStackNavigator';
+import useContactStore from '@/src/store/useContact';
 
 const HeaderChatComponent: React.FC<StackHeaderProps> = (props) => {
   const insets = useSafeAreaInsets();
   const { rooms } = useRoomStore();
+  const { groups } = useContactStore();
   const params = props.route.params as MainStackParamList['Chat'];
-  const room = rooms.find((r) => r.id === params?.roomId || r.roomId === params?.roomId);
-  
+  const room = rooms.find((r) => r.id === params?.roomId || r.roomId === params?.roomId) || groups.find((g) => g.roomId === params?.roomId) || null;
   const backgroundColor = '#42A59F';
   const statusBarStyle: StatusBarStyle = 'light-content';
   const height = 56;
   const showStatusBar = true;
-
   return (
     <>
       {showStatusBar && (
