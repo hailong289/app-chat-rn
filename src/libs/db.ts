@@ -1,6 +1,5 @@
 import { NitroSQLiteConnection, open, SQLiteQueryParamItem } from "react-native-nitro-sqlite";
-import DB_NAME from './migration';
-import MIGRATIONS from './migration';
+import { DB_NAME, MIGRATIONS } from "./migrations";
 
 class DB {
     private static instance: DB;
@@ -110,7 +109,7 @@ class DB {
 
         // 2. Lấy version hiện tại
         const res = await db.executeAsync('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1');
-        const currentVersion = res.rows?.item(0)?.version || 0;
+        const currentVersion = Number(res.rows?.item(0)?.version || 0);
         
         // 3. Lấy version mới nhất từ code
         const targetVersion = Math.max(...Object.keys(MIGRATIONS).map(Number));
@@ -177,8 +176,7 @@ class DB {
 
     public close() {
         if (this.db) {
-        this.db.close();
-        this.db = null;
+            this.db.close();
         }
     }
 
@@ -256,14 +254,14 @@ class DB {
         const params = this.bindings.values;
         const query = this.getQuery('select');
         const result = await this.db.executeAsync(query, params);
-        return this.withCast(result?.rows?._array ?? null);
+        return this.withCast(result?.rows?._array ?? []);
     }
 
     public async getOne() {
         const params = this.bindings.values;
         const query = this.getQuery('select');
         const result = await this.db.executeAsync(query, params);
-        return this.withCast(result?.rows?._array?.[0] ?? null);
+        return this.withCast(result?.rows?._array?.[0] ?? {});
     }
 
     public async exists() {
