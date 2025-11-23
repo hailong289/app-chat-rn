@@ -1,36 +1,42 @@
-import { open, NitroSQLiteConnection } from 'react-native-nitro-sqlite';
+import { NitroSQLiteConnection } from 'react-native-nitro-sqlite';
+import { Rooms } from '../models/rooms.model';
+import { Messages } from '../models/messages.model';
 
 export const DB_NAME = 'AppChatRN.db';
+export const CURRENT_VERSION = 1;
 
 // Định nghĩa các migration theo version
 export const MIGRATIONS: Record<number, (db: NitroSQLiteConnection) => Promise<void>> = {
   1: async (db) => {
-    // V1: Tạo bảng Rooms và Messages cơ bản
-    await db.executeAsync(`
-      CREATE TABLE IF NOT EXISTS rooms (
-        id TEXT PRIMARY KEY,
-        roomId TEXT NOT NULL,
-        type TEXT DEFAULT 'private',
-        name TEXT,
-        updatedAt TEXT,
-        unread_count INTEGER DEFAULT 0
-      );
-    `);
-    await db.executeAsync(`
-      CREATE TABLE IF NOT EXISTS messages (
-        id TEXT PRIMARY KEY,
-        roomId TEXT NOT NULL,
-        content TEXT NOT NULL,
-        createdAt TEXT NOT NULL,
-        isMine INTEGER DEFAULT 0
-      );
-    `);
-    // Tạo index
-    await db.executeAsync(`CREATE INDEX IF NOT EXISTS idx_messages_roomId ON messages(roomId);`);
-    await db.executeAsync(`CREATE INDEX IF NOT EXISTS idx_messages_createdAt ON messages(createdAt);`);
-  },
-  // Ví dụ: Sau này lên version 2 cần thêm cột "reaction"
-  // 2: async (db) => {
-  //   await db.executeAsync("ALTER TABLE messages ADD COLUMN reactions TEXT");
-  // }
+    const roomsModel = new Rooms();
+    const messagesModel = new Messages(); 
+    await db.executeAsync(roomsModel.createTable().trim());
+    await db.executeAsync(messagesModel.createTable().trim());
+    await db.executeAsync(roomsModel.createIndex().trim());
+    await db.executeAsync(messagesModel.createIndex().trim());
+    console.log('✅ Thành công tạo bảng rooms và messages và index');
+  }, 
+  100: async (db) => { // reset và tạo lại các bảng
+    const roomsModel = new Rooms();
+    const messagesModel = new Messages();
+    const dropQueries = [
+      roomsModel.dropTable().trim(),
+      messagesModel.dropTable().trim(),
+    ];
+    for (const query of dropQueries) {
+      await db.executeAsync(query);
+    }
+    await db.executeAsync('PRAGMA foreign_keys = OFF;');
+    const createQueries = [
+      roomsModel.createTable().trim(),
+      messagesModel.createTable().trim(),
+      roomsModel.createIndex().trim(),
+      messagesModel.createIndex().trim(),
+    ];
+    for (const query of createQueries) {
+      await db.executeAsync(query);
+    }
+    await db.executeAsync('PRAGMA foreign_keys = ON;');
+    console.log('✅ Thành công reset và tạo lại các bảng rooms và messages và index');
+  }
 };

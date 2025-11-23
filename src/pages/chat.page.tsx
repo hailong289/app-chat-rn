@@ -11,6 +11,7 @@ import {
   NativeScrollEvent,
   Image,
   ScrollView,
+  LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
@@ -28,6 +29,8 @@ import { FilePreview } from '../types/message.type';
 import { launchImageLibrary } from 'react-native-image-picker';
 import { ObjectId } from 'bson';
 
+
+const ESTIMATED_ITEM_HEIGHT = 70;
 const ChatPage: React.FC = () => {
   const route = useRoute();
   const insets = useSafeAreaInsets();
@@ -42,15 +45,12 @@ const ChatPage: React.FC = () => {
   const { socket } = useSocket();
   const { sendMessage, isLoading: msgLoading, messagesRoom, getMessages } = useMessageStore();
   const { user } = useAuthStore();
+  const itemHeightCache = useRef<Record<string, number>>({});
 
   useEffect(() => {
     hasMoreOlderRef.current = true;
     getMessages(roomId);
-  }, [roomId]);
-
-  useEffect(() => {
-    // Thay đổi scroll khi có tin nhắn mới - chỉ chạy lần đầu tiên vào
-    if (messagesRoom[roomId]?.messages.length > 0) {
+    if (chatData.length > 0) {
       handleScrollToEnd();
     }
   }, [roomId]);
@@ -74,6 +74,7 @@ const ChatPage: React.FC = () => {
     setMessage('');
     setSelectedAttachments([]);
     setShowMoreOptions(false);
+    handleScrollToEnd();
   };
 
   const chatData = useMemo<ChatMessageItem[]>(
@@ -81,7 +82,22 @@ const ChatPage: React.FC = () => {
     [messagesRoom, roomId],
   );
 
-  const renderItem = ({ item }: { item: ChatMessageItem }) => <MessageItem item={item} />;
+  const renderItem = ({ item }: { item: ChatMessageItem }) => {
+    return (
+      <View onLayout={handleItemLayout(item.id)}>
+        <MessageItem item={item} />
+      </View>
+    );
+  };
+
+  const handleItemLayout = (id: string) => {
+    return (event: LayoutChangeEvent) => {
+      const height = event.nativeEvent.layout.height;
+      if (itemHeightCache.current[id] !== height) {
+        itemHeightCache.current[id] = height;
+      }
+    };
+  };
 
   const handlePickImages = useCallback(async () => {
     try {
@@ -180,11 +196,43 @@ const ChatPage: React.FC = () => {
     [handleLoadMore], 
   );
 
-  const handleScrollToEnd = useCallback(() => {
+  const handleScrollToEnd = () => {
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: false });
     }, 500);
-  }, []);
+  };
+
+  const getItemLayout = (data: any, index: number) => {
+    const item = data[index];
+    const itemId = item.id;
+
+    // Kiểm tra xem đã cache chiều cao của item này chưa
+    if (itemHeightCache.current[itemId]) {
+      // NẾU ĐÃ CACHE:
+      // Tính offset (vị trí) chính xác
+      let offset = 0;
+      for (let i = 0; i < index; i++) {
+        // Lấy chiều cao đã cache của các item trước đó
+        const prevItemId = data[i].id;
+        offset += itemHeightCache.current[prevItemId] || ESTIMATED_ITEM_HEIGHT;
+      }
+      
+      return {
+        length: itemHeightCache.current[itemId], // Chiều cao thực tế
+        offset: offset,                          // Vị trí thực tế
+        index,
+      };
+
+    } else {
+      // NẾU CHƯA CACHE:
+      // Dùng chiều cao ước tính
+      return {
+        length: ESTIMATED_ITEM_HEIGHT,
+        offset: ESTIMATED_ITEM_HEIGHT * index, // Vị trí ước tính
+        index,
+      };
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -208,6 +256,7 @@ const ChatPage: React.FC = () => {
           }
           onScroll={handleScroll}
           scrollEventThrottle={18}
+          getItemLayout={getItemLayout}
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           contentContainerStyle={{ paddingVertical: 16 }}
           ListEmptyComponent={

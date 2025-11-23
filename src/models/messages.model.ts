@@ -1,6 +1,7 @@
+import db from "../libs/db";
 
-class Messages {
-    protected query;
+export class Messages {
+    private static instance: Messages | null = null;
     protected tableName = 'messages';
     protected field = [
         "id",
@@ -31,8 +32,19 @@ class Messages {
         "read_by": "object"
     };
 
-    constructor() {
-        this.query = db.setTable('messages').setCast(this.cast);
+    static getInstance() {
+        if (!this.instance) {
+            this.instance = new Messages();
+        }
+        return this.instance;
+    }
+
+    private q() {
+        return db.setTable(this.tableName).setCast(this.cast);
+    }
+
+    getQuery() {
+        return this.q();
     }
 
     createTable() {
@@ -59,6 +71,19 @@ class Messages {
             read_by_count INTEGER DEFAULT 0,
             status TEXT
             )
+        `;
+    }
+
+    dropTable() {
+      return `DROP TABLE IF EXISTS messages`;
+    }
+
+    createIndex() {
+        return `
+            CREATE INDEX IF NOT EXISTS idx_messages_roomId ON messages(roomId);
+            CREATE INDEX IF NOT EXISTS idx_messages_createdAt ON messages(createdAt);
+            CREATE INDEX IF NOT EXISTS idx_messages_roomId_createdAt ON messages(roomId, createdAt);
+            CREATE INDEX IF NOT EXISTS idx_messages_isMine ON messages(isMine);
         `;
     }
 }

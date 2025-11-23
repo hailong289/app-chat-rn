@@ -5,6 +5,7 @@ import Helpers from "../libs/helpers";
 import MessageService from "../service/message.service";
 import db from "../libs/db";
 import UploadService from "../service/upload.service";
+import { Messages } from "../models/messages.model";
 
 interface MessageState {
     messagesRoom: Record<string, RoomData>; // roomId -> room data;
@@ -252,7 +253,7 @@ const useMessageStore = create<MessageState>()(
                   roomId,
                   queryParams: {
                     msgId: pivotMessageId, // Lấy tin nhắn quanh ID này
-                    limit: 20,
+                    limit: 50,
                     type: direction,
                   },
                 });
@@ -270,9 +271,8 @@ const useMessageStore = create<MessageState>()(
                 }));
       
                 // Lưu từng tin nhắn vào IndexedDB
-                await Promise.all(
-                  newMessages.map((msg: MessageType) => {  
-                      db.setTable('messages').upsert({
+                newMessages.map((msg: MessageType) => {  
+                      Messages.getInstance().getQuery().upsert({
                         ...msg,
                         sender: JSON.stringify(msg.sender || {}),
                         attachments: JSON.stringify(msg.attachments || []),
@@ -280,8 +280,7 @@ const useMessageStore = create<MessageState>()(
                         reply: JSON.stringify(msg.reply || {}),
                         read_by: JSON.stringify(msg.read_by || []),
                       });
-                  })
-                );
+                });
       
                 // Cập nhật state
                 const currentRoom = get().messagesRoom[roomId] || {};
@@ -391,21 +390,6 @@ const useMessageStore = create<MessageState>()(
               },
             },
           });
-            
-          try {
-            // lưu vào db
-            db.setTable('messages').upsert({
-              ...msg,
-              sender: JSON.stringify(msg.sender || {}),
-              attachments: JSON.stringify(msg.attachments || []),
-              reactions: JSON.stringify(msg.reactions || []),
-              reply: JSON.stringify(msg.reply || {}),
-              read_by: JSON.stringify(msg.read_by || []),
-            });
-          } catch (error) {
-            
-          }
-
         }
     })
 );

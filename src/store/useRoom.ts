@@ -2,7 +2,7 @@ import { create } from "zustand";
 import RoomService from "../service/room.service";
 import { Room, PayloadGetRooms, PayloadGetRoomsCallback, PayloadGetRoomsSuccess, PayloadCreateGroupRoom } from "../types/room.type";
 import ApiResponse from "../types/response.type";
-import db from "../libs/db";
+import { Rooms } from "../models/rooms.model";
 
 interface RoomState {
     rooms: Room[];
@@ -43,7 +43,7 @@ const useRoomStore = create<RoomState>()(
                     isLoading: false,
                 });
                 Promise.all(metadata.map(async (room) => {
-                    await db.setTable('rooms').upsert(room);
+                    await Rooms.upsert(room);
                 }));
                 payload.success();
             } catch (error) {
@@ -53,13 +53,7 @@ const useRoomStore = create<RoomState>()(
             }
         },
         getRoomsByType: async (type: string, limit: number, offset: number) => {
-            let rooms;
-            const query = db.setTable('rooms').select(['*']).orderBy('updatedAt', 'ASC').limit(limit).offset(offset);
-            if (type == "all") {
-              rooms = await query.get() as unknown as Room[];
-            } else {
-              rooms = await query.where('type', '=', type).get() as unknown as Room[];
-            }
+            const rooms = await Rooms.getRooms(limit, offset, type);
             set({
               rooms: (rooms || []).sort((a: Room, b: Room) =>
                 new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
@@ -79,7 +73,8 @@ const useRoomStore = create<RoomState>()(
             await get().getRoomsByType('all', 20, 0);
         },
         removeRoom: async (roomId) => {
-            await db.setTable('rooms').where('roomId', '=', roomId).delete();
+            const roomsModel = Rooms.getInstance();
+            await roomsModel.getQuery().where('roomId', '=', roomId).delete();
             get().getRoomsByType('all', 50, 0);
         },
         clearRooms: () => {
@@ -94,7 +89,7 @@ const useRoomStore = create<RoomState>()(
                 const response = await RoomService.createGroupRoom(payload);
                 const responseData = response.data.metadata as Room;
                 try {
-                    await db.setTable('rooms').upsert(responseData);
+                    await Rooms.upsert(responseData);
                 } catch (error) {
                     console.error("Error upserting room:", error);
                 }

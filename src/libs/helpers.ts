@@ -141,6 +141,15 @@ class Helpers {
             console.error("Error clearing storage:", error);
         }
     }
+
+    public static safeJsonParse = (input: any, defaultValue: any) => {
+        if (typeof input !== 'string') return input;
+        try {
+            return JSON.parse(input) || defaultValue;
+        } catch (e) {
+            return defaultValue;
+        }
+    }
 }
 
 export default Helpers;

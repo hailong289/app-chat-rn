@@ -5,6 +5,7 @@ import ContactService from "../service/contact.service";
 import RoomService from "../service/room.service";
 import { PayloadGetRooms, Room } from "../types/room.type";
 import db from "../libs/db";
+import { Rooms } from "../models/rooms.model";
 
 
 
@@ -174,7 +175,8 @@ const useContactStore = create<ContactState>()(
             try {
                 db.enableLog(true);
                 if (payload.q) { // Nếu có từ khóa tìm kiếm, lấy dữ liệu từ db
-                    const roomGroupDb = await db.setTable('rooms')
+                    const roomGroupDb = await Rooms.getInstance()
+                    .getQuery()
                     .orderBy('updatedAt', 'ASC')
                     .limit(payload.limit)
                     .offset(payload.offset)
@@ -199,7 +201,7 @@ const useContactStore = create<ContactState>()(
                 });
                 const roomsGroup = response?.data?.metadata as Room[] || [];
                 Promise.all(roomsGroup.map((room: Room) => {
-                    db.setTable('rooms').upsert(room);
+                    Rooms.upsert(room);
                 }));
                 set({
                     groups: roomsGroup,
@@ -208,7 +210,9 @@ const useContactStore = create<ContactState>()(
                 payload.success(true);
             } catch (error) {
                 // Nếu lỗi, lấy dữ liệu từ db
-                const roomGroupDb = await db.setTable('rooms')
+                const roomGroupDb = await Rooms
+                .getInstance()
+                .getQuery()
                 .orderBy('updatedAt', 'ASC')
                 .limit(payload.limit)
                 .offset(payload.offset)

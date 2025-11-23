@@ -1,5 +1,8 @@
-import { NitroSQLiteConnection, open, SQLiteQueryParamItem } from "react-native-nitro-sqlite";
-import { DB_NAME, MIGRATIONS } from "./migrations";
+import { NitroSQLiteConnection, open } from "react-native-nitro-sqlite";
+import { CURRENT_VERSION, DB_NAME, MIGRATIONS } from "./migrations";
+import Helpers from "./helpers";
+import { Rooms } from "../models/rooms.model";
+import { Messages } from "../models/messages.model";
 
 class DB {
     private static instance: DB;
@@ -25,6 +28,8 @@ class DB {
         values: [] as string[],
         cast: {} as Record<string, string>
     };
+
+
     private log = {
         logs: [] as {
             query: string;
@@ -34,15 +39,15 @@ class DB {
     }
 
     private constructor() {
-       try {
-         this.db = open({
-            name: 'AppChatRN.db',
-        });
-        console.log('✅ Database opened:', 'AppChatRN.db');
-       } catch (error) {
-        console.error('❌ Lỗi khởi tạo database:', error);
-        throw error;
-       }
+        try {
+            this.db = open({
+                name: 'AppChatRN.db',
+            });
+            console.log('✅ Database opened:', 'AppChatRN.db');
+        } catch (error) {
+            console.error('❌ Lỗi khởi tạo database:', error);
+            throw error;
+        }
     }
 
     public getDb(): NitroSQLiteConnection {
@@ -83,57 +88,26 @@ class DB {
         return queryRaw;
     }
 
-    public async init(): Promise<void> {
-        if (this.db) return;
-
-        try {
-        this.db = open({ name: DB_NAME });
-        await this.handleMigrations();
-        console.log('✅ Database initialized successfully');
-        } catch (error) {
-        console.error('❌ Database init error:', error);
-        throw error;
-        }
-    }
-
-    private async handleMigrations() {
+    public async migrations() {
         const db = this.getDb();
-        
-        // 1. Tạo bảng version nếu chưa có
-        await db.executeAsync(`
-        CREATE TABLE IF NOT EXISTS schema_version (
-            version INTEGER PRIMARY KEY, 
-            updated_at INTEGER DEFAULT (strftime('%s', 'now'))
-        );
-        `);
-
-        // 2. Lấy version hiện tại
-        const res = await db.executeAsync('SELECT version FROM schema_version ORDER BY version DESC LIMIT 1');
-        const currentVersion = Number(res.rows?.item(0)?.version || 0);
-        
-        // 3. Lấy version mới nhất từ code
-        const targetVersion = Math.max(...Object.keys(MIGRATIONS).map(Number));
-
-        if (currentVersion >= targetVersion) return;
-
-        console.log(`🔄 Migrating from v${currentVersion} to v${targetVersion}...`);
-
-        // 4. Chạy lần lượt các migration còn thiếu
-        for (let v = currentVersion + 1; v <= targetVersion; v++) {
-        if (MIGRATIONS[v]) {
-            try {
-                // Nên chạy trong transaction để đảm bảo an toàn
-                await db.executeAsync('BEGIN TRANSACTION');
-                await MIGRATIONS[v](db);
-                await db.executeAsync('INSERT INTO schema_version (version) VALUES (?)', [v]);
-                await db.executeAsync('COMMIT');
-                console.log(`✅ Migrated to version ${v}`);
-            } catch (e) {
-                await db.executeAsync('ROLLBACK');
-                console.error(`❌ Migration failed at version ${v}`, e);
-                throw e;
+        const targetVersion = CURRENT_VERSION;
+        try {
+            const result = await db.executeAsync('PRAGMA user_version');
+            const currentVersionRow = result.rows?.item(0);
+            const currentVersion = Number(currentVersionRow?.user_version) || 0;
+            if (currentVersion < targetVersion) {
+                for (const [version, migration] of Object.entries(MIGRATIONS)) {
+                    const versionNum = Number(version);
+                    if (versionNum > currentVersion) {
+                        await migration(db);
+                        await db.executeAsync(`PRAGMA user_version = ${targetVersion}`);
+                    }
+                }
+            } else {
+                console.log('✅ Database đã có version', currentVersion);
             }
-        }
+        } catch (error) {
+            console.error('❌ Database migration error:', error);
         }
     }
 
@@ -141,37 +115,32 @@ class DB {
     public async executeQuery(query: string, params: any[] = []) {
         const db = this.getDb();
         const result = await db.executeAsync(query, params);
-        
+
         // Helper convert rows sang array chuẩn
         const rows: any[] = [];
         const len = result.rows?.length || 0;
         for (let i = 0; i < len; i++) {
-        rows.push(result.rows!.item(i));
+            rows.push(result.rows!.item(i));
         }
 
         return {
-        insertId: result.insertId,
-        rowsAffected: result.rowsAffected,
-        rows,
+            insertId: result.insertId,
+            rowsAffected: result.rowsAffected,
+            rows,
         };
     }
 
     public async resetDatabase() {
-        if (!this.db) return;
-        console.warn('⚠️ Resetting Database...');
-        // Tắt check foreign key để drop bảng dễ hơn
-        await this.db.executeAsync('PRAGMA foreign_keys = OFF;');
-        
-        const tables = await this.executeQuery("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'");
-        
-        for (const row of tables.rows) {
-            await this.db.executeAsync(`DROP TABLE IF EXISTS ${row.name}`);
+        try {
+            if (!this.db) {
+                throw new Error('Database chưa khởi tạo');
+            }
+            console.warn('⚠️ Xóa và tạo lại database...');
+            await MIGRATIONS[100](this.db); 
+        } catch (error) {
+            console.error('❌ Lỗi reset database:', error);
+            throw error;
         }
-        
-        await this.db.executeAsync('PRAGMA foreign_keys = ON;');
-        
-        // Chạy lại migration để tạo lại bảng sạch
-        await this.handleMigrations();
     }
 
     public close() {
@@ -275,8 +244,10 @@ class DB {
         const columns = Object.keys(data);
         const values = Object.values(data).map((value) => this.convertValue(value));
         this.bindings.column.push(...columns);
-        this.bindings.values.push(...values);
-        const params = this.bindings.values;
+        const params = values;
+        if (this.bindings.values.length > 0) {
+            params.push(...this.bindings.values);
+        }
         const query = this.getQuery('insert');
         const result = await this.db.executeAsync(query, params);
         return result;
@@ -284,11 +255,11 @@ class DB {
 
     public async insertMany(dataArray: Record<string, any>[]) {
         if (dataArray.length === 0) return;
-        
+
         const columns = Object.keys(dataArray[0]);
         const placeholders = columns.map(() => '?').join(',');
         const query = `INSERT INTO ${this.bindings.table.name} (${columns.join(',')}) VALUES (${placeholders})`;
-        
+
         const results = [];
         for (const data of dataArray) {
             const values = columns.map(col => this.convertValue(data[col]));
@@ -303,8 +274,10 @@ class DB {
         const columns = Object.keys(data);
         const values = Object.values(data).map((value) => this.convertValue(value));
         this.bindings.column.push(...columns);
-        this.bindings.values.push(...values);
-        const params = this.bindings.values;
+        const params = values;
+        if (this.bindings.values.length > 0) {
+            params.push(...this.bindings.values);
+        }
         const query = this.getQuery('update');
         return await this.db.executeAsync(query, params);
     }
@@ -316,20 +289,18 @@ class DB {
         if (!tableName) {
             throw new Error('Table name is required for upsert operation');
         }
-        
+
         // Kiểm tra record có tồn tại không
         const result = await this.setTable(tableName).where('id', '=', params.id).exists();
-        
+
         // Set lại table name và where condition cho update
         if (result) {
-            this.setTable(tableName).where('id', '=', params.id);
+            const id = params.id;
             delete params.id;
-            return await this.update(params);
+            return await this.setTable(tableName).where('id', '=', id).update(params);
         }
-        
         // Set lại table name cho insert
-        this.setTable(tableName);
-        return await this.insert(params);
+        return await this.setTable(tableName).insert(params);
     }
 
     public async delete() {
@@ -337,7 +308,7 @@ class DB {
         const query = this.getQuery('delete');
         return await this.db.executeAsync(query, params);
     }
-    
+
 
     private getQuery(type: 'select' | 'insert' | 'update' | 'delete' | 'upsert'): string {
         const { table, column, where, orderBy, limit, offset, groupBy, values } = this.bindings;
@@ -399,7 +370,7 @@ class DB {
                 query += ` (${column.join(',')}) VALUES (${column.map(() => '?').join(',')})`;
             }
         }
-        
+
         if (where.length > 0) {
             const whereConditions = [];
             for (const item of where) {
@@ -407,7 +378,7 @@ class DB {
                     whereConditions.push(`${item.column} IN (${item.value})`);
                 } else if (item.operator === 'NOT IN') {
                     whereConditions.push(`${item.column} NOT IN (${item.value})`);
-                } else {    
+                } else {
                     whereConditions.push(`${item.column} ${item.operator} ${item.value}`);
                 }
             }
@@ -442,7 +413,7 @@ class DB {
         if (typeof value === 'string') {
             return value;
         }
-        if (typeof value === 'object') {   
+        if (typeof value === 'object') {
             return JSON.stringify(value);
         }
         if (Array.isArray(value)) {
@@ -473,33 +444,22 @@ class DB {
     }
 
     private withCast(value: Array<any> | Object): any {
-        // 1. Xử lý Array: Đệ quy từng phần tử
         if (Array.isArray(value)) {
             return value.map((item: any) => this.withCast(item));
         }
-        // 2. Xử lý Object (loại trừ null và Date)
         if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
             const out: any = {};
-            // Duyệt qua tất cả các key của object
             for (const key in value) {
                 if (Object.prototype.hasOwnProperty.call(value, key)) {
-                    const rawValue = value[key]; // Lấy giá trị thực của key
-                    const castType = this.cast[key]; // Lấy kiểu cần cast (nếu có)
-
-                    // Nếu key này nằm trong danh sách cần Cast
+                    const rawValue = value[key as keyof Object];
+                    const castType = this.bindings.cast[key];
                     if (castType) {
                         if (castType === 'object' || castType === 'array') {
-                        // Logic parse an toàn
-                        out[key] = this.safeJsonParse(rawValue, castType === 'array' ? [] : {});
-                        } else {
-                        // Các kiểu cast khác (number, boolean...) nếu có
-                        out[key] = rawValue; 
+                            // Logic parse an toàn
+                            out[key] = Helpers.safeJsonParse(rawValue, castType === 'array' ? [] : {});
                         }
-                    } 
-                    // Nếu key không cần cast -> Giữ nguyên (hoặc đệ quy tiếp nếu muốn deep scan)
-                    else {
-                        // out[key] = rawValue; // Dùng dòng này nếu chỉ muốn cast 1 cấp
-                        out[key] = this.withCast(rawValue); // Dùng dòng này nếu muốn đệ quy sâu xuống con cháu
+                    } else {
+                        out[key] = this.withCast(rawValue);
                     }
                 }
             }
@@ -509,15 +469,6 @@ class DB {
         return value;
     }
 
-    // Helper: Parse JSON an toàn, không crash
-    private safeJsonParse(input: any, defaultValue: any) {
-        if (typeof input !== 'string') return input; // Nếu đã là object/array rồi thì trả về luôn
-        try {
-        return JSON.parse(input) || defaultValue;
-        } catch (e) {
-        return defaultValue;
-        }
-    }
 
     public clear() {
         this.bindings = {
