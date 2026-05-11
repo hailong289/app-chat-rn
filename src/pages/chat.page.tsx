@@ -50,9 +50,7 @@ const ChatPage: React.FC = () => {
   useEffect(() => {
     hasMoreOlderRef.current = true;
     getMessages(roomId);
-    if (chatData.length > 0) {
-      handleScrollToEnd();
-    }
+    handleScrollToEnd();
   }, [roomId]);
 
   const hasAttachments = selectedAttachments.length > 0;
@@ -264,6 +262,12 @@ const ChatPage: React.FC = () => {
               <Text className="text-gray-400">Chưa có tin nhắn nào</Text>
             </View>
           }
+          // Tối ưu memory và performance
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={10}
+          updateCellsBatchingPeriod={50}
+          initialNumToRender={15}
+          windowSize={10}
         />
 
         {/* Media Options */}

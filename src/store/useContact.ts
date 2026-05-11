@@ -7,14 +7,13 @@ import { PayloadGetRooms, Room } from "../types/room.type";
 import db from "../libs/db";
 import { Rooms } from "../models/rooms.model";
 
-
-
 interface ContactState {
-    friends: User[]; // danh sách bạn bè
-    friendRequests: User[]; // danh sách yêu cầu kết bạn
-    sentFriendRequests: User[]; // danh sách đã gửi yêu cầu kết bạn
-    groups: Room[]; // danh sách nhóm
-    users: User[]; // danh sách người dùng
+    friends: User[];
+    friendRequests: User[];
+    sentFriendRequests: User[];
+    groups: Room[];
+    users: User[];
+    friends_suggestions: any[];
     loading: { 
         friends: boolean; 
         friendRequests: boolean; 
@@ -24,7 +23,9 @@ interface ContactState {
         acceptFriendRequest: boolean; 
         rejectFriendRequest: boolean; 
         groups: boolean;
-    },
+        blockFriend: boolean;
+        friendSuggestions: boolean;
+    };
     getFriends: (payload: GetListFriendsPayload) => Promise<void>;
     getFriendRequests: (payload: GetListFriendsPayload) => Promise<void>;
     getSentFriendRequests: (payload: GetSentFriendRequestsPayload) => Promise<void>;
@@ -33,6 +34,9 @@ interface ContactState {
     acceptFriendRequest: (payload: AcceptFriendRequestPayload) => Promise<void>;
     rejectFriendRequest: (payload: RejectFriendRequestPayload) => Promise<void>;
     getGroups: (payload: PayloadGetRooms) => Promise<void>;
+    blockFriend: (userId: string) => Promise<void>;
+    unblockFriend: (userId: string) => Promise<void>;
+    getFriendSuggestions: (limit?: number) => Promise<void>;
 }
 
 const useContactStore = create<ContactState>()(
@@ -42,6 +46,7 @@ const useContactStore = create<ContactState>()(
         sentFriendRequests: [],
         groups: [],
         users: [],
+        friends_suggestions: [],
         loading: { 
             friends: false, 
             friendRequests: false, 
@@ -51,6 +56,8 @@ const useContactStore = create<ContactState>()(
             acceptFriendRequest: false, 
             rejectFriendRequest: false,
             groups: false,
+            blockFriend: false,
+            friendSuggestions: false,
         },
         getFriends: async (payload: GetListFriendsPayload) => {
             set({ loading: { ...get().loading, friends: true } });
@@ -93,12 +100,10 @@ const useContactStore = create<ContactState>()(
             set({ loading: { ...get().loading, sendFriendRequest: true } });
             try {
                 const response = await ContactService.sendFriendRequest({ receiverId: payload.receiverId });
-                // Lọc người dùng không phải là người dùng được gửi yêu cầu kết bạn
                 const filterUsers = get().users.filter((user: User) => user.id !== payload.receiverId) || [];
                 set({
                     loading: { ...get().loading, sendFriendRequest: false }, 
                     users: filterUsers as User[],
-
                 });
                 payload.success(true);
             } catch (error) {
@@ -174,7 +179,7 @@ const useContactStore = create<ContactState>()(
             set({ loading: { ...get().loading, groups: true } });
             try {
                 db.enableLog(true);
-                if (payload.q) { // Nếu có từ khóa tìm kiếm, lấy dữ liệu từ db
+                if (payload.q) {
                     const roomGroupDb = await Rooms.getInstance()
                     .getQuery()
                     .orderBy('updatedAt', 'ASC')
@@ -191,8 +196,7 @@ const useContactStore = create<ContactState>()(
                         payload.success(roomGroupDb);
                         return;
                     }
-                } // Nếu không có từ khóa tìm kiếm, lấy dữ liệu từ api
-
+                }
                 const response = await RoomService.getGroupRooms({
                     limit: payload.limit,
                     offset: payload.offset,
@@ -209,7 +213,6 @@ const useContactStore = create<ContactState>()(
                 });
                 payload.success(true);
             } catch (error) {
-                // Nếu lỗi, lấy dữ liệu từ db
                 const roomGroupDb = await Rooms
                 .getInstance()
                 .getQuery()
@@ -223,6 +226,45 @@ const useContactStore = create<ContactState>()(
                     loading: { ...get().loading, groups: false }
                 });
                 payload.error(error as any);
+            }
+        },
+        // ── Block Friend ────────────────────────────────────────────────
+        blockFriend: async (userId: string) => {
+            set({ loading: { ...get().loading, blockFriend: true } });
+            try {
+                await ContactService.blockFriend(userId);
+                set({
+                    friends: get().friends.filter((f: User) => f.id !== userId),
+                    loading: { ...get().loading, blockFriend: false }
+                });
+            } catch (error) {
+                set({ loading: { ...get().loading, blockFriend: false } });
+                console.error("Block friend failed:", error);
+            }
+        },
+        // ── Unblock Friend ──────────────────────────────────────────────
+        unblockFriend: async (userId: string) => {
+            set({ loading: { ...get().loading, blockFriend: true } });
+            try {
+                await ContactService.unblockFriend(userId);
+                set({ loading: { ...get().loading, blockFriend: false } });
+            } catch (error) {
+                set({ loading: { ...get().loading, blockFriend: false } });
+                console.error("Unblock friend failed:", error);
+            }
+        },
+        // ── Get Friend Suggestions ──────────────────────────────────────
+        getFriendSuggestions: async (limit = 10) => {
+            set({ loading: { ...get().loading, friendSuggestions: true } });
+            try {
+                const response = await ContactService.getFriendSuggestions(limit);
+                set({
+                    friends_suggestions: response?.data?.metadata?.suggestions || [],
+                    loading: { ...get().loading, friendSuggestions: false }
+                });
+            } catch (error) {
+                set({ loading: { ...get().loading, friendSuggestions: false } });
+                console.error("Get friend suggestions failed:", error);
             }
         },
     })

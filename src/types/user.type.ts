@@ -22,6 +22,7 @@ export interface User {
   gender: UserGender;
   dateOfBirth: string;
   avatar?: string;
+  address?: string;
   status: UserStatus;
   createdAt: string;
   updatedAt: string;
