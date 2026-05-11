@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { View, Text, Image, TouchableOpacity, Modal, Dimensions, ScrollView } from 'react-native';
+import { View, Text, Image, TouchableOpacity, Modal, Dimensions, ScrollView, ActivityIndicator } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { FilePreview } from '@/src/types/message.type';
 
@@ -23,9 +24,13 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
   getAttachmentSource,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const [loadingStates, setLoadingStates] = useState<{ [key: string]: boolean }>({});
+  const [errorStates, setErrorStates] = useState<{ [key: string]: boolean }>({});
 
-  const currentImage = images[currentIndex];
-  const sourceUri = currentImage ? getAttachmentSource(currentImage) : undefined;
+  // Chỉ render ảnh hiện tại và các ảnh lân cận để tiết kiệm memory
+  const shouldRenderImage = (idx: number) => {
+    return Math.abs(idx - currentIndex) <= 1; // Chỉ render current, prev, next
+  };
 
   return (
     <Modal
@@ -67,7 +72,12 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
         >
           {images.map((img, idx) => {
             const uri = getAttachmentSource(img);
+            const shouldRender = shouldRenderImage(idx);
+            const isLoading = loadingStates[img._id] !== false;
+            const hasError = errorStates[img._id] === true;
+
             if (!uri) return null;
+
             return (
               <View
                 key={img._id}
@@ -78,14 +88,72 @@ const ImageViewerModal: React.FC<ImageViewerModalProps> = ({
                   alignItems: 'center',
                 }}
               >
-                <Image
-                  source={{ uri }}
-                  style={{
-                    width: SCREEN_WIDTH,
-                    height: '80%',
-                  }}
-                  resizeMode="contain"
-                />
+                {shouldRender ? (
+                  <>
+                    {isLoading && !hasError && (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          width: SCREEN_WIDTH,
+                          height: '80%',
+                          backgroundColor: '#000',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          zIndex: 1,
+                        }}
+                      >
+                        <ActivityIndicator size="large" color="#fff" />
+                      </View>
+                    )}
+                    {hasError ? (
+                      <View
+                        style={{
+                          width: SCREEN_WIDTH,
+                          height: '80%',
+                          backgroundColor: '#000',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{ color: '#fff', fontSize: 16 }}>
+                          Không thể tải ảnh
+                        </Text>
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri }}
+                        style={{
+                          width: SCREEN_WIDTH,
+                          height: '80%',
+                        }}
+                        resizeMode="contain"
+                        onLoadStart={() => {
+                          setLoadingStates(prev => ({ ...prev, [img._id]: true }));
+                        }}
+                        onLoad={() => {
+                          setLoadingStates(prev => ({ ...prev, [img._id]: false }));
+                        }}
+                        onError={() => {
+                          setLoadingStates(prev => ({ ...prev, [img._id]: false }));
+                          setErrorStates(prev => ({ ...prev, [img._id]: true }));
+                        }}
+                      />
+                    )}
+                  </>
+                ) : (
+                  // Placeholder cho ảnh không được render
+                  <View
+                    style={{
+                      width: SCREEN_WIDTH,
+                      height: '80%',
+                      backgroundColor: '#000',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <ActivityIndicator size="small" color="#fff" />
+                  </View>
+                )}
               </View>
             );
           })}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Modal, Dimensions, ScrollView, ActivityIndicator } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { FilePreview } from '@/src/types/message.type';
@@ -25,6 +25,37 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
 }) => {
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [loadingStates, setLoadingStates] = useState<{ [key: string]: boolean }>({});
+  const videoRefs = useRef<{ [key: string]: Video | null }>({});
+
+  // Cleanup videos khi đóng modal
+  useEffect(() => {
+    if (!visible) {
+      // Pause tất cả videos
+      Object.values(videoRefs.current).forEach((video) => {
+        if (video) {
+          video.setNativeProps({ paused: true });
+        }
+      });
+      // Reset loading states
+      setLoadingStates({});
+    }
+  }, [visible]);
+
+  // Cleanup khi unmount
+  useEffect(() => {
+    return () => {
+      Object.values(videoRefs.current).forEach((video) => {
+        if (video) {
+          video.setNativeProps({ paused: true });
+        }
+      });
+    };
+  }, []);
+
+  // Chỉ render video hiện tại và các video lân cận (prev, next) để tiết kiệm memory
+  const shouldRenderVideo = (idx: number) => {
+    return Math.abs(idx - currentIndex) <= 1; // Chỉ render current, prev, next
+  };
 
   return (
     <Modal
@@ -68,6 +99,7 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
             const videoUrl = getAttachmentSource(video);
             const isCurrentVideo = idx === currentIndex;
             const isLoading = loadingStates[video._id] !== false;
+            const shouldRender = shouldRenderVideo(idx);
             
             return (
               <View
@@ -79,7 +111,7 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
                   alignItems: 'center',
                 }}
               >
-                {videoUrl ? (
+                {shouldRender && videoUrl ? (
                   <>
                     {isLoading && (
                       <View
@@ -97,6 +129,13 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
                       </View>
                     )}
                     <Video
+                      ref={(ref) => {
+                        if (ref) {
+                          videoRefs.current[video._id] = ref;
+                        } else {
+                          delete videoRefs.current[video._id];
+                        }
+                      }}
                       source={{ uri: videoUrl }}
                       style={{
                         width: SCREEN_WIDTH,
@@ -109,12 +148,13 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
                       onLoad={() => {
                         setLoadingStates(prev => ({ ...prev, [video._id]: false }));
                       }}
-                      onError={() => {
+                      onError={(error) => {
+                        console.warn('Video load error:', error);
                         setLoadingStates(prev => ({ ...prev, [video._id]: false }));
                       }}
                     />
                   </>
-                ) : (
+                ) : shouldRender ? (
                   <View
                     style={{
                       width: SCREEN_WIDTH,
@@ -127,6 +167,19 @@ const VideoViewerModal: React.FC<VideoViewerModalProps> = ({
                     <Text style={{ color: '#fff', fontSize: 16 }}>
                       Không có bản xem trước
                     </Text>
+                  </View>
+                ) : (
+                  // Placeholder cho video không được render
+                  <View
+                    style={{
+                      width: SCREEN_WIDTH,
+                      height: '80%',
+                      backgroundColor: '#000',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <ActivityIndicator size="small" color="#fff" />
                   </View>
                 )}
               </View>
