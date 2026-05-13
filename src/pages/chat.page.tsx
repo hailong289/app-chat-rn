@@ -5,19 +5,13 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  TouchableOpacity,
   ActivityIndicator,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  Image,
-  ScrollView,
   LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
-import { Box } from '@/src/components/ui/box';
-import { Input, InputField } from '@/src/components/ui/input';
-import FontAwesome from '@react-native-vector-icons/fontawesome';
 import MessageItem, {
   ChatMessageItem,
   groupMessagesWithSeparators,
@@ -25,56 +19,91 @@ import MessageItem, {
 import { useSocket } from '../providers/socket.provider';
 import useMessageStore from '../store/useMessage';
 import useAuthStore from '../store/useAuth';
-import { FilePreview } from '../types/message.type';
-import { launchImageLibrary } from 'react-native-image-picker';
-import { ObjectId } from 'bson';
-
+import useRoomStore from '../store/useRoom';
+import type { FilePreview, MessageType } from '../types/message.type';
+import { InputBar } from '../components/chat/input-bar';
+import { ChatDrawer } from '../components/chat/chat-drawer';
+import { useReadProgress } from '../libs/useReadProgress';
 
 const ESTIMATED_ITEM_HEIGHT = 70;
+
 const ChatPage: React.FC = () => {
   const route = useRoute();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<any>(null);
   const hasMoreOlderRef = useRef<boolean>(true);
   const atTopRef = useRef<boolean>(false);
-  const [message, setMessage] = useState('');
+
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<MessageType | null>(null);
+
   const { roomId } = (route.params as { roomId: string }) || {};
-  const [showMoreOptions, setShowMoreOptions] = useState(false);
-  const [selectedAttachments, setSelectedAttachments] = useState<FilePreview[]>([]);
   const { socket } = useSocket();
-  const { sendMessage, isLoading: msgLoading, messagesRoom, getMessages } = useMessageStore();
+  const { sendMessage, isLoading: msgLoading, messagesRoom, getMessages } =
+    useMessageStore();
   const { user } = useAuthStore();
+  const { typingUsers, room, getRoomDetail } = useRoomStore();
+  const { handleScroll: handleReadScroll, markRead } = useReadProgress(roomId);
+
   const itemHeightCache = useRef<Record<string, number>>({});
 
+  // Load room detail & messages on mount
   useEffect(() => {
     hasMoreOlderRef.current = true;
     getMessages(roomId);
+    getRoomDetail(roomId);
     handleScrollToEnd();
   }, [roomId]);
 
-  const hasAttachments = selectedAttachments.length > 0;
+  // Mark read when screen is focused
+  useEffect(() => {
+    const timeout = setTimeout(() => markRead(), 800);
+    return () => clearTimeout(timeout);
+  }, [roomId]);
 
-  const handleSend = () => {
-    const trimmed = message.trim();
-    if (!trimmed && !hasAttachments) return;
+  // ── Typing emit ────────────────────────────────────────────────────────
+  const handleTypingStart = useCallback(() => {
+    socket?.emit('typing:start', { roomId });
+  }, [socket, roomId]);
 
-    sendMessage({
-      roomId: roomId,
-      content: trimmed,
-      attachments: selectedAttachments,
-      type: hasAttachments ? 'image' : 'text',
-      socket,
-      userId: user?.id,
-      userFullname: user?.fullname,
-      userAvatar: user?.avatar,
-    });
-    setMessage('');
-    setSelectedAttachments([]);
-    setShowMoreOptions(false);
-    handleScrollToEnd();
-  };
+  const handleTypingStop = useCallback(() => {
+    socket?.emit('typing:stop', { roomId });
+  }, [socket, roomId]);
 
+  // ── Send message ───────────────────────────────────────────────────────
+  const handleSend = useCallback(
+    ({
+      content,
+      attachments,
+      type,
+      replyTo,
+    }: {
+      content: string;
+      attachments: FilePreview[];
+      type: string;
+      replyTo?: string;
+    }) => {
+      if (!content.trim() && attachments.length === 0) return;
+
+      sendMessage({
+        roomId,
+        content,
+        attachments,
+        type: type as any,
+        replyTo,
+        socket,
+        userId: user?.id,
+        userFullname: user?.fullname,
+        userAvatar: user?.avatar,
+      });
+      setReplyingTo(null);
+      handleScrollToEnd();
+    },
+    [roomId, socket, user, sendMessage],
+  );
+
+  // ── Chat data ──────────────────────────────────────────────────────────
   const chatData = useMemo<ChatMessageItem[]>(
     () => groupMessagesWithSeparators(messagesRoom[roomId]?.messages),
     [messagesRoom, roomId],
@@ -83,7 +112,10 @@ const ChatPage: React.FC = () => {
   const renderItem = ({ item }: { item: ChatMessageItem }) => {
     return (
       <View onLayout={handleItemLayout(item.id)}>
-        <MessageItem item={item} />
+        <MessageItem
+          item={item}
+          onReply={(msg) => setReplyingTo(msg)}
+        />
       </View>
     );
   };
@@ -97,73 +129,15 @@ const ChatPage: React.FC = () => {
     };
   };
 
-  const handlePickImages = useCallback(async () => {
-    try {
-      const result = await launchImageLibrary({
-        mediaType: 'mixed',
-        selectionLimit: 10,
-        includeBase64: false,
-      });
-
-      if (result.didCancel || !result.assets?.length) {
-        return;
-      }
-
-      const mappedAttachments: FilePreview[] = result.assets
-        .filter((asset) => asset.uri)
-        .map((asset) => {
-          const uri = asset.uri as string;
-          const name =
-            asset.fileName ||
-            `image_${Date.now()}_${Math.floor(Math.random() * 1_000)}.${
-              (asset.type && asset.type.split('/')[1]) || 'jpg'
-            }`;
-          const mimeType = asset.type || 'image/jpeg';
-
-          return {
-            _id: new ObjectId().toHexString(),
-            file: asset,
-            url: asset.uri,
-            name: name,
-            size: asset.fileSize || 0,
-            mimeType: mimeType,
-            kind: "image",
-            status: "pending",
-            uploadProgress: 0,
-          } as FilePreview;
-        });
-
-      if (mappedAttachments.length > 0) {
-        setSelectedAttachments((prev) => [...prev, ...mappedAttachments]);
-        setShowMoreOptions(false);
-      }
-    } catch (error) {
-      console.warn('Error picking images:', error);
-    }
-  }, []);
-
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setSelectedAttachments((prev) => prev.filter((att) => att._id !== id));
-  }, []);
-
+  // ── Load more (older messages) ─────────────────────────────────────────
   const handleLoadMore = useCallback(async () => {
-    if (isFetchingMore || msgLoading) {
-      return;
-    }
+    if (isFetchingMore || msgLoading) return;
 
     const roomMessages = messagesRoom[roomId]?.messages || [];
-    if (roomMessages.length === 0) {
-      return;
-    }
+    if (roomMessages.length === 0) return;
 
     const firstMessage = roomMessages[0];
-    if (!firstMessage) {
-      return;
-    }
-
-    if (!hasMoreOlderRef.current) {
-      return;
-    }
+    if (!firstMessage || !hasMoreOlderRef.current) return;
 
     setIsFetchingMore(true);
     try {
@@ -176,22 +150,23 @@ const ChatPage: React.FC = () => {
     }
   }, [getMessages, isFetchingMore, messagesRoom, msgLoading, roomId]);
 
+  // ── Scroll handlers ────────────────────────────────────────────────────
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset } = event.nativeEvent;
       const isAtTop = contentOffset.y <= 36;
       if (isAtTop) {
         if (!atTopRef.current) {
-          atTopRef.current = true; 
-          handleLoadMore(); 
+          atTopRef.current = true;
+          handleLoadMore();
         }
       } else {
-        if (atTopRef.current) {
-          atTopRef.current = false; 
-        }
+        if (atTopRef.current) atTopRef.current = false;
       }
+      // Auto mark-read when near bottom
+      handleReadScroll(event);
     },
-    [handleLoadMore], 
+    [handleLoadMore, handleReadScroll],
   );
 
   const handleScrollToEnd = () => {
@@ -204,41 +179,41 @@ const ChatPage: React.FC = () => {
     const item = data[index];
     const itemId = item.id;
 
-    // Kiểm tra xem đã cache chiều cao của item này chưa
     if (itemHeightCache.current[itemId]) {
-      // NẾU ĐÃ CACHE:
-      // Tính offset (vị trí) chính xác
       let offset = 0;
       for (let i = 0; i < index; i++) {
-        // Lấy chiều cao đã cache của các item trước đó
         const prevItemId = data[i].id;
         offset += itemHeightCache.current[prevItemId] || ESTIMATED_ITEM_HEIGHT;
       }
-      
       return {
-        length: itemHeightCache.current[itemId], // Chiều cao thực tế
-        offset: offset,                          // Vị trí thực tế
-        index,
-      };
-
-    } else {
-      // NẾU CHƯA CACHE:
-      // Dùng chiều cao ước tính
-      return {
-        length: ESTIMATED_ITEM_HEIGHT,
-        offset: ESTIMATED_ITEM_HEIGHT * index, // Vị trí ước tính
+        length: itemHeightCache.current[itemId],
+        offset,
         index,
       };
     }
+    return {
+      length: ESTIMATED_ITEM_HEIGHT,
+      offset: ESTIMATED_ITEM_HEIGHT * index,
+      index,
+    };
   };
 
+  // ── Typing users for current room ──────────────────────────────────────
+  const currentTypingUsers = useMemo(
+    () => (typingUsers[roomId] || []).map(u => ({
+      userId: u.userId,
+      fullname: u.fullname,
+    })),
+    [typingUsers, roomId],
+  );
+
   return (
-    <KeyboardAvoidingView
+    <>
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-
         {/* Messages List */}
         <FlatList
           ref={flatListRef}
@@ -252,17 +227,16 @@ const ChatPage: React.FC = () => {
               </View>
             ) : null
           }
-          onScroll={handleScroll}
-          scrollEventThrottle={18}
-          getItemLayout={getItemLayout}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          contentContainerStyle={{ paddingVertical: 16 }}
           ListEmptyComponent={
             <View className="flex-1 items-center justify-center py-20">
               <Text className="text-gray-400">Chưa có tin nhắn nào</Text>
             </View>
           }
-          // Tối ưu memory và performance
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          getItemLayout={getItemLayout}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          contentContainerStyle={{ paddingVertical: 16 }}
           removeClippedSubviews={true}
           maxToRenderPerBatch={10}
           updateCellsBatchingPeriod={50}
@@ -270,112 +244,31 @@ const ChatPage: React.FC = () => {
           windowSize={10}
         />
 
-        {/* Media Options */}
-        {showMoreOptions && (
-          <View className="bg-gray-100 px-4">
-            <View className="bg-white rounded-full flex-row items-center justify-around py-4">
-              <TouchableOpacity
-                className="items-center justify-center gap-1 flex-1"
-                onPress={() => {
-                  // TODO: Handle camera
-                }}
-              >
-                <FontAwesome name="camera" size={24} color="#4B5563" />
-                <Text className="text-gray-700 text-sm">Camera</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="items-center justify-center gap-1 flex-1"
-                onPress={handlePickImages}
-              >
-                <FontAwesome name="file-image-o" size={24} color="#4B5563" />
-                <Text className="text-gray-700 text-sm">Thư viện</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="items-center justify-center gap-1 flex-1"
-                onPress={() => {
-                  // TODO: Handle video picker
-                }}
-              >
-                <FontAwesome name="microphone" size={24} color="#4B5563" />
-                <Text className="text-gray-700 text-sm">Audio</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Attachment Preview */}
-        {hasAttachments && (
-          <View className="bg-gray-100 px-4">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingVertical: 12, gap: 12 }}
-            >
-              {selectedAttachments.map((attachment) => (
-                <View key={attachment._id} className="relative">
-                  <Image
-                    source={{ uri: attachment.thumbUrl || attachment.url }}
-                    className="w-20 h-20 rounded-xl bg-gray-200"
-                  />
-                  <TouchableOpacity
-                    className="absolute -top-2 -right-2 bg-black/70 w-6 h-6 rounded-full items-center justify-center"
-                    onPress={() => handleRemoveAttachment(attachment._id)}
-                  >
-                    <FontAwesome name="times" size={12} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* Input Area */}
-        <View
-          className="bg-gray-100 px-4 py-3"
-          style={{ paddingBottom: insets.bottom }}
-        >
-          <View className="bg-white rounded-full flex-row items-center px-3 py-2">
-            <TouchableOpacity 
-              className="w-10 h-10 items-center justify-center"
-              onPress={() => {
-                setShowMoreOptions(!showMoreOptions);
-                handleScrollToEnd();
-              }}
-            >
-              <FontAwesome name="plus" size={20} color="#4B5563" />
-            </TouchableOpacity>
-            <Box className="flex-1 mx-2">
-              <Input variant="outline" size="md" className="h-[50px] border-0 bg-transparent">
-                <InputField
-                  placeholder="Nhập tin nhắn..."
-                  value={message}
-                  onChangeText={setMessage}
-                  multiline
-                  style={{ maxHeight: 100 }}
-                  onSubmitEditing={handleSend}
-                  className="text-gray-700"
-                  returnKeyType="send"
-                />
-              </Input>
-            </Box>
-            <TouchableOpacity
-              onPress={handleSend}
-              disabled={!message.trim() && !hasAttachments}
-              className={`rounded-full w-12 h-12 items-center justify-center ${
-                message.trim() || hasAttachments ? 'bg-primary-500' : 'bg-gray-300'
-              }`}
-            >
-              <FontAwesome
-                name="paper-plane"
-                size={16}
-                color="#fff"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
+        {/* Input Bar */}
+        <InputBar
+          roomId={roomId}
+          replyingTo={replyingTo}
+          typingUsers={currentTypingUsers}
+          currentUserId={user?.id}
+          onSend={handleSend}
+          onClearReply={() => setReplyingTo(null)}
+          onTypingStart={handleTypingStart}
+          onTypingStop={handleTypingStop}
+        />
       </KeyboardAvoidingView>
+
+      {/* Chat Drawer */}
+      <ChatDrawer
+        visible={drawerVisible}
+        onClose={() => setDrawerVisible(false)}
+        roomId={roomId}
+        onScrollToMessage={(msgId) => {
+          // TODO: scroll to message by id
+          setDrawerVisible(false);
+        }}
+      />
+    </>
   );
 };
 
 export default ChatPage;
-

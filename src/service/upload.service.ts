@@ -168,4 +168,31 @@ export default class UploadService {
     });
     return Promise.all(tasks);
   }
+
+  /**
+   * Lấy danh sách attachments (media/file/link) trong một room.
+   * Dùng cho ChatDrawer.
+   */
+  static async getAttachments(params: {
+    roomId: string;
+    type: 'media' | 'file' | 'link';
+    page?: number;
+    limit?: number;
+  }): Promise<any[]> {
+    try {
+      const response = await apiService.get<any>(
+        `/filesystem/room-attachments/${params.roomId}`,
+        {
+          params: {
+            type: params.type,
+            page: params.page ?? 1,
+            limit: params.limit ?? 20,
+          },
+        },
+      );
+      return response.data?.metadata || [];
+    } catch {
+      return [];
+    }
+  }
 }

@@ -7,72 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Badge, BadgeIcon, BadgeText } from '../components/ui/badge';
 
-interface NotificationItem {
-  id: string;
-  type: 'message' | 'friend_request' | 'system' | 'like' | 'comment';
-  title: string;
-  message: string;
-  time: string;
-  avatar?: string;
-  isRead: boolean;
-  metadata?: any;
-}
-
-const mockNotifications: NotificationItem[] = [
-  {
-    id: '1',
-    type: 'message',
-    title: 'Jesus đã gửi tin nhắn',
-    message: 'Hello, how are you doing today?',
-    time: '10:30 AM',
-    avatar: 'https://avatar.iran.liara.run/public',
-    isRead: false,
-  },
-  {
-    id: '2',
-    type: 'friend_request',
-    title: 'Mari đã gửi lời mời kết bạn',
-    message: 'Muốn kết bạn với bạn',
-    time: '9:15 AM',
-    avatar: 'https://avatar.iran.liara.run/public',
-    isRead: false,
-  },
-  {
-    id: '3',
-    type: 'like',
-    title: 'Kristin đã thích bài viết của bạn',
-    message: 'Đã thích trạng thái của bạn',
-    time: 'Yesterday',
-    avatar: 'https://avatar.iran.liara.run/public',
-    isRead: true,
-  },
-  {
-    id: '4',
-    type: 'comment',
-    title: 'Lea đã bình luận',
-    message: 'Bài viết hay quá!',
-    time: '2 days ago',
-    avatar: 'https://avatar.iran.liara.run/public',
-    isRead: true,
-  },
-  {
-    id: '5',
-    type: 'system',
-    title: 'Cập nhật hệ thống',
-    message: 'Phiên bản mới đã được phát hành',
-    time: '3 days ago',
-    isRead: true,
-  },
-  {
-    id: '6',
-    type: 'message',
-    title: 'John đã gửi tin nhắn',
-    message: 'Are you free this weekend?',
-    time: '1 week ago',
-    avatar: 'https://avatar.iran.liara.run/public',
-    isRead: true,
-  },
-];
+import useNotificationStore from '../store/useNotification';
 
 const getNotificationIcon = (type: string) => {
   switch (type) {
@@ -94,32 +29,28 @@ const getNotificationIcon = (type: string) => {
 const NotificationPage = () => {
   const insets = useSafeAreaInsets();
   const backgroundColor = '#42A59F';
-  const [notifications, setNotifications] = useState<NotificationItem[]>(mockNotifications);
-  const [refreshing, setRefreshing] = useState(false);
+  const { 
+    notifications, 
+    unreadCount, 
+    isLoading, 
+    fetchNotifications, 
+    markAsRead, 
+    markAllAsRead 
+  } = useNotificationStore();
 
-  const onRefresh = React.useCallback(() => {
-    setRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
-      setNotifications(mockNotifications);
-      setRefreshing(false);
-    }, 1000);
+  React.useEffect(() => {
+    fetchNotifications();
   }, []);
 
-  const handleNotificationPress = (notification: NotificationItem) => {
-    // Handle notification press
-    console.log('Notification pressed:', notification.id);
-    // Mark as read
+  const onRefresh = React.useCallback(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  const handleNotificationPress = (notification: any) => {
     if (!notification.isRead) {
-      setNotifications(prev =>
-        prev.map(item =>
-          item.id === notification.id ? { ...item, isRead: true } : item
-        )
-      );
+      markAsRead(notification._id);
     }
   };
-
-  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
     <SafeAreaView className='flex-1 bg-white' edges={['top']}>
@@ -137,7 +68,7 @@ const NotificationPage = () => {
       <ScrollView
         contentContainerStyle={{ paddingBottom: 20, paddingTop: 20 }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={isLoading} onRefresh={onRefresh} />
         }
       >
         <HStack className="items-center justify-between mb-4 px-5">
@@ -172,7 +103,7 @@ const NotificationPage = () => {
           <VStack>
             {notifications.map((notification) => (
               <TouchableOpacity
-                key={notification.id}
+                key={notification._id}
                 className={`py-4 border-b border-gray-200 ${
                   !notification.isRead ? 'bg-blue-50' : ''
                 }`}
@@ -181,9 +112,9 @@ const NotificationPage = () => {
               >
                 <HStack className="items-center justify-between px-5">
                   <HStack className="items-center flex-1">
-                    {notification.avatar ? (
+                    {notification.sender?.avatar ? (
                       <Image
-                        source={{ uri: notification.avatar }}
+                        source={{ uri: notification.sender.avatar }}
                         style={{
                           width: 48,
                           height: 48,
@@ -223,9 +154,11 @@ const NotificationPage = () => {
                       >
                         {notification.message}
                       </Text>
-                      <Text className="text-gray-400 text-[12px] mt-1">
-                        {notification.time}
-                      </Text>
+                      {notification.createdAt && (
+                        <Text className="text-gray-400 text-[12px] mt-1">
+                          {new Date(notification.createdAt).toLocaleDateString('vi-VN')} {new Date(notification.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                      )}
                     </VStack>
                   </HStack>
                   <Box className="ml-2">

@@ -15,6 +15,8 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import HeaderSearchComponent from '@/src/components/headers/headers-search.component';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/src/navigations/MainStackNavigator';
+import useContactStore from '@/src/store/useContact';
+import useRoomStore from '@/src/store/useRoom';
 
 type TabType = 'friends' | 'groups' | 'requests' | 'pending';
 
@@ -38,11 +40,13 @@ const ContactPage = () => {
     }));
   };
 
+  const { friends, friendRequests, sentFriendRequests, groups } = useContactStore();
+
   const tabs = [
-    { key: 'friends' as TabType, label: 'Bạn bè', count: contactMockFriends.length },
-    { key: 'groups' as TabType, label: 'Nhóm', count: contactMockGroups.length },
-    { key: 'requests' as TabType, label: 'Yêu cầu', count: contactMockFriendRequests.length },
-    { key: 'pending' as TabType, label: 'Đã gửi kết bạn', count: 0 },
+    { key: 'friends' as TabType, label: 'Bạn bè', count: friends.length },
+    { key: 'groups' as TabType, label: 'Nhóm', count: groups.length },
+    { key: 'requests' as TabType, label: 'Yêu cầu', count: friendRequests.length },
+    { key: 'pending' as TabType, label: 'Đã gửi kết bạn', count: sentFriendRequests.length },
   ];
 
   return (
@@ -88,7 +92,7 @@ const ContactPage = () => {
               numberOfLines={2}
               style={{ lineHeight: 18 }}
             >
-              {tab.label}
+              {tab.label} {tab.count > 0 && `(${tab.count})`}
             </Text>
           </TouchableOpacity>
         ))}

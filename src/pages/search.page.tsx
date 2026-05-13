@@ -7,6 +7,9 @@ import { HStack } from '@/src/components/ui/hstack';
 import { VStack } from '@/src/components/ui/vstack';
 import HeaderComponent from '@/src/components/headers/headers.component';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
+import useContactStore from '../store/useContact';
+import MessageService from '../service/message.service';
+import { User } from '../types/user.type';
 
 interface SearchResult {
   id: string;
@@ -15,15 +18,8 @@ interface SearchResult {
   avatar?: string;
   subtitle?: string;
   time?: string;
+  data?: any;
 }
-
-const mockSearchResults: SearchResult[] = [
-  { id: '1', type: 'user', name: 'Jesus', avatar: 'https://avatar.iran.liara.run/public', subtitle: 'Đang hoạt động' },
-  { id: '2', type: 'user', name: 'Mari', avatar: 'https://avatar.iran.liara.run/public', subtitle: 'Hoạt động 2 giờ trước' },
-  { id: '3', type: 'group', name: 'Nhóm dự án', subtitle: '12 thành viên' },
-  { id: '4', type: 'message', name: 'Kristin', avatar: 'https://avatar.iran.liara.run/public', subtitle: 'Hello, how are you?', time: '10:30 AM' },
-  { id: '5', type: 'user', name: 'Lea', avatar: 'https://avatar.iran.liara.run/public', subtitle: 'Đang hoạt động' },
-];
 
 const SearchPage = () => {
   const navigation = useNavigation();
@@ -31,6 +27,7 @@ const SearchPage = () => {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const { getUsers, getGroups } = useContactStore();
 
   useEffect(() => {
     // Auto focus input when component mounts
@@ -43,16 +40,61 @@ const SearchPage = () => {
   useEffect(() => {
     if (searchQuery.trim().length > 0) {
       setIsSearching(true);
-      // Simulate search API call
-      const timer = setTimeout(() => {
-        const filtered = mockSearchResults.filter(
-          (result) =>
-            result.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            result.subtitle?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        setSearchResults(filtered);
+      const timer = setTimeout(async () => {
+        let results: SearchResult[] = [];
+        
+        // 1. Search Users
+        try {
+          await getUsers({
+            search: searchQuery,
+            limit: 5,
+            page: 1,
+            success: (data: any) => {
+              const users = data.users || [];
+              results = [
+                ...results,
+                ...users.map((u: User) => ({
+                  id: u.id,
+                  type: 'user' as const,
+                  name: u.fullname,
+                  avatar: u.avatar,
+                  subtitle: u.email,
+                  data: u,
+                })),
+              ];
+            },
+            error: () => {},
+          });
+        } catch (e) {}
+
+        // 2. Search Groups
+        try {
+          await getGroups({
+            q: searchQuery,
+            limit: 5,
+            offset: 0,
+            type: 'group',
+            success: (data: any) => {
+              const groups = data.rooms || [];
+              results = [
+                ...results,
+                ...groups.map((g: any) => ({
+                  id: g.roomId,
+                  type: 'group' as const,
+                  name: g.name,
+                  avatar: g.avatar,
+                  subtitle: `${g.members?.length || 0} thành viên`,
+                  data: g,
+                })),
+              ];
+            },
+            error: () => {},
+          });
+        } catch (e) {}
+
+        setSearchResults(results);
         setIsSearching(false);
-      }, 300);
+      }, 500);
       return () => clearTimeout(timer);
     } else {
       setSearchResults([]);
@@ -86,7 +128,11 @@ const SearchPage = () => {
 
   const handleResultPress = (result: SearchResult) => {
     Keyboard.dismiss();
-    console.log('Result pressed:', result);
+    if (result.type === 'group') {
+      (navigation as any).navigate('Chat', { roomId: result.id });
+    } else if (result.type === 'user') {
+      (navigation as any).navigate('Contact', { activeTab: 'friends' });
+    }
   };
 
   return (

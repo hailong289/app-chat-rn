@@ -7,6 +7,7 @@ import { VStack } from '@/src/components/ui/vstack';
 import { User } from '@/src/types/user.type';
 import useContactStore from '@/src/store/useContact';
 import { ImageAvatar } from '../chat/image-avatar.component';
+import { ContactProfileModal } from '../modals/contact-profile.modal';
 
 interface ContactTabFriendsProps {
   searchQuery: string;
@@ -16,6 +17,7 @@ export const ContactTabFriends: React.FC<ContactTabFriendsProps> = ({ searchQuer
   const { getFriends, loading: { friends: isLoadingFriends }, friends } = useContactStore();
   const [page, setPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   const fetchData = () => {
     getFriends({
@@ -101,8 +103,8 @@ export const ContactTabFriends: React.FC<ContactTabFriendsProps> = ({ searchQuer
                     </Text>
                   </VStack>
                 </HStack>
-                <TouchableOpacity onPress={() => {}}>
-                  <FontAwesome name="chevron-right" size={14} color="#9CA3AF" />
+                <TouchableOpacity onPress={() => setSelectedUser(item)}>
+                  <FontAwesome name="info-circle" size={20} color="#9CA3AF" />
                 </TouchableOpacity>
               </HStack>
              </TouchableOpacity>
@@ -110,6 +112,12 @@ export const ContactTabFriends: React.FC<ContactTabFriendsProps> = ({ searchQuer
           </>
         )}
       </VStack>
+
+      <ContactProfileModal 
+        visible={!!selectedUser} 
+        user={selectedUser} 
+        onClose={() => setSelectedUser(null)} 
+      />
     </ScrollView>
   );
 };
