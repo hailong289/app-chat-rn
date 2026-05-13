@@ -1,4 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import CryptoJS from "crypto-js";
+
+const SECRET_KEY = "123456";
 
 class Helpers {
 
@@ -141,6 +144,31 @@ class Helpers {
             console.error("Error clearing storage:", error);
         }
     }
+
+    static enCryptUserInfo = (userInfo: any): string => {
+        const userInfoString = JSON.stringify(userInfo);
+        return CryptoJS.AES.encrypt(userInfoString, SECRET_KEY).toString();
+    };
+
+    static decryptUserInfo = (encryptedUserInfo: string): any => {
+        try {
+            if (!encryptedUserInfo) return null;
+            let cleanStr = decodeURIComponent(encryptedUserInfo);
+            if (
+                (cleanStr.startsWith('"') && cleanStr.endsWith('"')) ||
+                (cleanStr.startsWith("'") && cleanStr.endsWith("'"))
+            ) {
+                cleanStr = cleanStr.slice(1, -1);
+            }
+            cleanStr = cleanStr.replace(/ /g, '+');
+            const bytes = CryptoJS.AES.decrypt(cleanStr, SECRET_KEY);
+            const originalText = bytes.toString(CryptoJS.enc.Utf8);
+            if (!originalText) return null;
+            return JSON.parse(originalText);
+        } catch {
+            return null;
+        }
+    };
 
     public static safeJsonParse = (input: any, defaultValue: any) => {
         if (typeof input !== 'string') return input;

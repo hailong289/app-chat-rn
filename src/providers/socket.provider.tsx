@@ -43,11 +43,18 @@ export const SocketEvents = {
   PRESENCE_ONLINE: "presence:online",
   PRESENCE_OFFLINE: "presence:offline",
 
-  // Call events (stub for Phase 4)
-  CALL_INCOMING: "call:incoming",
+  // Call events
+  CALL_REQUEST: "call:request",
   CALL_ACCEPTED: "call:accepted",
-  CALL_REJECTED: "call:rejected",
-  CALL_ENDED: "call:ended",
+  CALL_ANSWER: "call:answer",
+  CALL_CANDIDATE: "call:candidate",
+  CALL_END: "call:end",
+  CALL_MEMBER_JOINED: "call:member-joined",
+  CALL_SHARE_SCREEN: "call:share-screen",
+  CALL_CAMERA_STATE: "call:camera-state",
+  CALL_MIC_STATE: "call:mic-state",
+  CALL_BUSY: "call:busy",
+  SIGNAL: "signal",
 
   // Read events
   READ_MESSAGE: "message:read",
@@ -368,18 +375,53 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
         // Update message read status
       });
 
-      // ── Call events (stubs) ─────────────────────────────────────────
-      s.on(SocketEvents.CALL_INCOMING, (data: any) => {
-        // Will be handled in Phase 4
+      // ── Call events ─────────────────────────────────────────────────
+      // Phase 4: delegate to useCallStore event hub
+      s.on('call:request', (data: any) => {
+        const { eventCall, socket: storeSocket } = require('../store/useCallStore').default.getState();
+        if (!storeSocket) require('../store/useCallStore').default.setState({ socket: s });
+        void eventCall('request', data);
       });
 
-      s.on(SocketEvents.CALL_ACCEPTED, (data: any) => {
+      s.on('call:accepted', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('accepted', data);
       });
 
-      s.on(SocketEvents.CALL_REJECTED, (data: any) => {
+      s.on('call:answer', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('answer', data);
       });
 
-      s.on(SocketEvents.CALL_ENDED, (data: any) => {
+      s.on('call:candidate', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('candidate', data);
+      });
+
+      s.on('call:end', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('end', data);
+      });
+
+      s.on('call:member-joined', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('member-joined', data);
+      });
+
+      s.on('call:share-screen', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('share-screen', data);
+      });
+
+      s.on('call:camera-state', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('camera-state', data);
+      });
+
+      s.on('call:mic-state', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('mic-state', data);
+      });
+
+      s.on('call:busy', (data: any) => {
+        void require('../store/useCallStore').default.getState().eventCall('busy', data);
+      });
+
+      // SFU signal routing
+      s.on('signal', (data: any) => {
+        void require('../store/useCallStore').default.getState().handleSFUSignal(data);
       });
     },
     [connectWithRetry]
