@@ -18,7 +18,8 @@ import {
   PanResponder,
   Dimensions,
 } from 'react-native';
-import useCallStore from '../../store/useCallStore';
+import useCallStore, { getCallNavigationRef } from '../../store/useCallStore';
+import { navigateToCallScreen } from '../../libs/safe-navigation';
 
 let RTCView: any = null;
 try {
@@ -112,7 +113,8 @@ function formatDuration(seconds: number) {
  * the user is NOT on the CallScreen.
  */
 export function CallPipOverlay({ isOnCallScreen }: { isOnCallScreen: boolean }) {
-  const { status, stream, action } = useCallStore();
+  const { status, stream, action, roomId, members, mode, callMode, callId } =
+    useCallStore();
 
   if (isOnCallScreen) return null;
   if (status !== 'accepted' && status !== 'calling') return null;
@@ -122,7 +124,14 @@ export function CallPipOverlay({ isOnCallScreen }: { isOnCallScreen: boolean }) 
       localStream={stream.localStream}
       isMicEnabled={action.isMicEnabled}
       onTap={() => {
-        // Navigation back to CallScreen is handled by the navigation ref
+        navigateToCallScreen(getCallNavigationRef(), {
+          roomId,
+          members,
+          callType: mode,
+          callMode,
+          callId: callId ?? undefined,
+          isCaller: true,
+        });
       }}
     />
   );

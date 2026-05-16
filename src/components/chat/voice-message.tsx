@@ -30,7 +30,7 @@ function formatMMSS(ms: number): string {
   return `${m}:${s}`;
 }
 
-const audioRecorderPlayer = new AudioRecorderPlayer();
+const audioRecorderPlayer = AudioRecorderPlayer;
 
 export const VoiceMessage: React.FC<VoiceMessageProps> = ({
   visible,

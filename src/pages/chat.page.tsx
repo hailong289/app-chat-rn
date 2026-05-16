@@ -1,4 +1,11 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useMemo,
+  useCallback,
+} from 'react';
 import {
   View,
   Text,
@@ -8,10 +15,12 @@ import {
   ActivityIndicator,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  LayoutChangeEvent,
+  StyleSheet,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import HeaderChatComponent from '../components/headers/headers-chat.component';
+import type { MainStackParamList } from '../navigations/MainStackNavigator';
 import MessageItem, {
   ChatMessageItem,
   groupMessagesWithSeparators,
@@ -24,54 +33,89 @@ import type { FilePreview, MessageType } from '../types/message.type';
 import { InputBar } from '../components/chat/input-bar';
 import { ChatDrawer } from '../components/chat/chat-drawer';
 import { useReadProgress } from '../libs/useReadProgress';
+import { ScrollToBottomButton } from '../components/chat/scroll-to-bottom-button';
+import { ChatLoadingSkeleton } from '../components/chat/chat-loading-skeleton';
+import { useChatScreen } from '../hooks/useChatScreen';
+import type { MessageType as MsgType } from '../types/message.type';
 
-const ESTIMATED_ITEM_HEIGHT = 70;
+/** Stable empty reference — avoids Zustand re-render loop (`?? []` creates new array each time). */
+const EMPTY_MESSAGES: MsgType[] = [];
 
 const ChatPage: React.FC = () => {
   const route = useRoute();
-  const insets = useSafeAreaInsets();
-  const flatListRef = useRef<any>(null);
-  const hasMoreOlderRef = useRef<boolean>(true);
-  const atTopRef = useRef<boolean>(false);
+  const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
+  const flatListRef = useRef<FlatList<ChatMessageItem>>(null);
+  const hasMoreOlderRef = useRef(true);
+  const atTopRef = useRef(false);
+  const initialScrollDoneRef = useRef(false);
 
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
 
-  const { roomId } = (route.params as { roomId: string }) || {};
+  const paramRoomId = (route.params as { roomId: string })?.roomId ?? '';
   const { socket } = useSocket();
-  const { sendMessage, isLoading: msgLoading, messagesRoom, getMessages } =
-    useMessageStore();
+  const { chatId, isLoadingMessages } = useChatScreen(paramRoomId, socket);
+
+  const sendMessage = useMessageStore((s) => s.sendMessage);
+  const loadOlderMessages = useMessageStore((s) => s.loadOlderMessages);
+  const messages = useMessageStore(
+    (s) => s.messagesRoom[chatId]?.messages ?? EMPTY_MESSAGES,
+  );
   const { user } = useAuthStore();
-  const { typingUsers, room, getRoomDetail } = useRoomStore();
-  const { handleScroll: handleReadScroll, markRead } = useReadProgress(roomId);
+  const { typingUsers, room, rooms } = useRoomStore();
+  const { handleScroll: handleReadScroll, markRead } = useReadProgress(chatId);
 
-  const itemHeightCache = useRef<Record<string, number>>({});
+  const chatData = useMemo<ChatMessageItem[]>(
+    () => groupMessagesWithSeparators(messages),
+    [messages],
+  );
 
-  // Load room detail & messages on mount
+  const handleScrollToEnd = useCallback((animated = false) => {
+    if (chatData.length === 0) return;
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated });
+    });
+  }, [chatData.length]);
+
   useEffect(() => {
     hasMoreOlderRef.current = true;
-    getMessages(roomId);
-    getRoomDetail(roomId);
-    handleScrollToEnd();
-  }, [roomId]);
+    atTopRef.current = false;
+    initialScrollDoneRef.current = false;
+  }, [chatId]);
 
-  // Mark read when screen is focused
   useEffect(() => {
     const timeout = setTimeout(() => markRead(), 800);
     return () => clearTimeout(timeout);
-  }, [roomId]);
+    // markRead intentionally omitted — only run once per room open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId]);
 
-  // ── Typing emit ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (isLoadingMessages || chatData.length === 0) return;
+    if (initialScrollDoneRef.current) return;
+    initialScrollDoneRef.current = true;
+    handleScrollToEnd(false);
+  }, [isLoadingMessages, chatData.length, handleScrollToEnd]);
+
+  const chatDataLengthRef = useRef(chatData.length);
+  useEffect(() => {
+    const prevLen = chatDataLengthRef.current;
+    chatDataLengthRef.current = chatData.length;
+    if (chatData.length > prevLen && isAtBottom) {
+      handleScrollToEnd(true);
+    }
+  }, [chatData.length, isAtBottom, handleScrollToEnd]);
+
   const handleTypingStart = useCallback(() => {
-    socket?.emit('typing:start', { roomId });
-  }, [socket, roomId]);
+    socket?.emit('user:typing', { roomId: chatId, isTyping: true });
+  }, [socket, chatId]);
 
   const handleTypingStop = useCallback(() => {
-    socket?.emit('typing:stop', { roomId });
-  }, [socket, roomId]);
+    socket?.emit('user:typing', { roomId: chatId, isTyping: false });
+  }, [socket, chatId]);
 
-  // ── Send message ───────────────────────────────────────────────────────
   const handleSend = useCallback(
     ({
       content,
@@ -87,10 +131,10 @@ const ChatPage: React.FC = () => {
       if (!content.trim() && attachments.length === 0) return;
 
       sendMessage({
-        roomId,
+        roomId: chatId,
         content,
         attachments,
-        type: type as any,
+        type: type as 'text' | 'image' | 'file' | 'video',
         replyTo,
         socket,
         userId: user?.id,
@@ -98,37 +142,18 @@ const ChatPage: React.FC = () => {
         userAvatar: user?.avatar,
       });
       setReplyingTo(null);
-      handleScrollToEnd();
+      handleScrollToEnd(true);
     },
-    [roomId, socket, user, sendMessage],
+    [chatId, socket, user, sendMessage, handleScrollToEnd],
   );
-
-  // ── Chat data ──────────────────────────────────────────────────────────
-  const chatData = useMemo<ChatMessageItem[]>(
-    () => groupMessagesWithSeparators(messagesRoom[roomId]?.messages),
-    [messagesRoom, roomId],
-  );
-
-  const handleItemLayout = useCallback((id: string) => {
-    return (event: LayoutChangeEvent) => {
-      const height = event.nativeEvent.layout.height;
-      if (itemHeightCache.current[id] !== height) {
-        itemHeightCache.current[id] = height;
-      }
-    };
-  }, []);
 
   const handleReply = useCallback((msg: MessageType) => setReplyingTo(msg), []);
 
   const renderItem = useCallback(
-    ({ item }: { item: ChatMessageItem }) => {
-      return (
-        <View onLayout={handleItemLayout(item.id)}>
-          <MessageItem item={item} onReply={handleReply} />
-        </View>
-      );
-    },
-    [handleItemLayout, handleReply],
+    ({ item }: { item: ChatMessageItem }) => (
+      <MessageItem item={item} onReply={handleReply} />
+    ),
+    [handleReply],
   );
 
   const keyExtractor = useCallback((item: ChatMessageItem) => item.id, []);
@@ -136,125 +161,134 @@ const ChatPage: React.FC = () => {
   const listHeaderComponent = useCallback(
     () =>
       isFetchingMore ? (
-        <View className="py-2">
-          <ActivityIndicator size="small" color="#4B5563" />
+        <View style={styles.loadMoreHeader}>
+          <ActivityIndicator size="small" color="#42A59F" />
         </View>
       ) : null,
     [isFetchingMore],
   );
 
-  // ── Load more (older messages) ─────────────────────────────────────────
   const handleLoadMore = useCallback(async () => {
-    if (isFetchingMore || msgLoading) return;
-
-    const roomMessages = messagesRoom[roomId]?.messages || [];
-    if (roomMessages.length === 0) return;
-
-    const firstMessage = roomMessages[0];
-    if (!firstMessage || !hasMoreOlderRef.current) return;
+    if (isFetchingMore || isLoadingMessages) return;
+    if (!hasMoreOlderRef.current || messages.length === 0) return;
 
     setIsFetchingMore(true);
     try {
-      const hasMore = await getMessages(roomId, firstMessage.id, 'old');
-      if (!hasMore) {
+      const older = await loadOlderMessages(chatId, 50);
+      if (!older || older.length === 0) {
         hasMoreOlderRef.current = false;
       }
     } finally {
       setIsFetchingMore(false);
     }
-  }, [getMessages, isFetchingMore, messagesRoom, msgLoading, roomId]);
+  }, [chatId, isFetchingMore, isLoadingMessages, loadOlderMessages, messages.length]);
 
-  // ── Scroll handlers ────────────────────────────────────────────────────
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset } = event.nativeEvent;
-      const isAtTop = contentOffset.y <= 36;
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const isAtTop = contentOffset.y <= 48;
+
       if (isAtTop) {
         if (!atTopRef.current) {
           atTopRef.current = true;
-          handleLoadMore();
+          void handleLoadMore();
         }
-      } else {
-        if (atTopRef.current) atTopRef.current = false;
+      } else if (atTopRef.current) {
+        atTopRef.current = false;
       }
-      // Auto mark-read when near bottom
+
+      const distanceFromBottom =
+        contentSize.height - layoutMeasurement.height - contentOffset.y;
+      setIsAtBottom(distanceFromBottom < 120);
+
       handleReadScroll(event);
     },
     [handleLoadMore, handleReadScroll],
   );
 
-  const handleScrollToEnd = () => {
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: false });
-    }, 500);
-  };
-
-  const getItemLayout = (data: any, index: number) => {
-    const item = data[index];
-    const itemId = item.id;
-
-    if (itemHeightCache.current[itemId]) {
-      let offset = 0;
-      for (let i = 0; i < index; i++) {
-        const prevItemId = data[i].id;
-        offset += itemHeightCache.current[prevItemId] || ESTIMATED_ITEM_HEIGHT;
-      }
-      return {
-        length: itemHeightCache.current[itemId],
-        offset,
-        index,
-      };
-    }
+  const roomMeta = useMemo(() => {
+    const currentRoom =
+      rooms.find((r) => r.id === chatId || r.roomId === chatId) ?? room;
     return {
-      length: ESTIMATED_ITEM_HEIGHT,
-      offset: ESTIMATED_ITEM_HEIGHT * index,
-      index,
+      unreadCount: currentRoom?.unread_count ?? 0,
+      isRead: currentRoom?.is_read ?? true,
     };
-  };
+  }, [rooms, room, chatId]);
 
-  // ── Typing users for current room ──────────────────────────────────────
   const currentTypingUsers = useMemo(
-    () => (typingUsers[roomId] || []).map(u => ({
-      userId: u.userId,
-      fullname: u.fullname,
-    })),
-    [typingUsers, roomId],
+    () =>
+      (typingUsers[chatId] || []).map((u) => ({
+        userId: u.userId,
+        fullname: u.fullname,
+      })),
+    [typingUsers, chatId],
   );
+
+  const showSkeleton = isLoadingMessages && chatData.length === 0;
+  const showEmpty = !isLoadingMessages && chatData.length === 0;
+
+  const openDrawer = useCallback(() => setDrawerVisible(true), []);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      header: (props) => (
+        <HeaderChatComponent {...props} onInfoPress={openDrawer} />
+      ),
+    });
+  }, [navigation, openDrawer]);
 
   return (
     <>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        {/* Messages List */}
-        <FlatList
-          ref={flatListRef}
-          data={chatData}
-          renderItem={renderItem}
-          keyExtractor={keyExtractor}
-          ListHeaderComponent={listHeaderComponent}
-          ListEmptyComponent={
-            <View className="flex-1 items-center justify-center py-20">
-              <Text className="text-gray-400">Chưa có tin nhắn nào</Text>
+        <View style={styles.flex}>
+          {showSkeleton ? (
+            <View style={styles.skeletonWrap}>
+              <ChatLoadingSkeleton />
             </View>
-          }
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          getItemLayout={getItemLayout}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          contentContainerStyle={{ paddingVertical: 16 }}
-          removeClippedSubviews={true}
-          maxToRenderPerBatch={10}
-          updateCellsBatchingPeriod={50}
-          initialNumToRender={15}
-          windowSize={10}
-        />
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              data={chatData}
+              renderItem={renderItem}
+              keyExtractor={keyExtractor}
+              ListHeaderComponent={listHeaderComponent}
+              ListEmptyComponent={
+                showEmpty ? (
+                  <View style={styles.emptyWrap}>
+                    <Text style={styles.emptyText}>Chưa có tin nhắn nào</Text>
+                    <Text style={styles.emptyHint}>
+                      Gửi tin nhắn đầu tiên để bắt đầu trò chuyện
+                    </Text>
+                  </View>
+                ) : null
+              }
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              contentContainerStyle={[
+                styles.listContent,
+                chatData.length === 0 && styles.listContentEmpty,
+              ]}
+              removeClippedSubviews={Platform.OS === 'android'}
+              maxToRenderPerBatch={12}
+              windowSize={9}
+              initialNumToRender={18}
+            />
+          )}
 
-        {/* Input Bar */}
+          <ScrollToBottomButton
+            isVisible={!isAtBottom && chatData.length > 0 && !isLoadingMessages}
+            unreadCount={roomMeta.unreadCount}
+            isRead={roomMeta.isRead}
+            onScrollToBottom={() => handleScrollToEnd(true)}
+          />
+        </View>
+
         <InputBar
-          roomId={roomId}
+          roomId={chatId}
           replyingTo={replyingTo}
           typingUsers={currentTypingUsers}
           currentUserId={user?.id}
@@ -265,18 +299,48 @@ const ChatPage: React.FC = () => {
         />
       </KeyboardAvoidingView>
 
-      {/* Chat Drawer */}
       <ChatDrawer
         visible={drawerVisible}
         onClose={() => setDrawerVisible(false)}
-        roomId={roomId}
-        onScrollToMessage={(msgId) => {
-          // TODO: scroll to message by id
-          setDrawerVisible(false);
-        }}
+        roomId={chatId}
+        onScrollToMessage={() => setDrawerVisible(false)}
       />
     </>
   );
 };
+
+const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: '#F8FAFC' },
+  skeletonWrap: { flex: 1, paddingTop: 8 },
+  listContent: {
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    flexGrow: 1,
+  },
+  listContentEmpty: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  loadMoreHeader: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 48,
+  },
+  emptyText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  emptyHint: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+});
 
 export default ChatPage;

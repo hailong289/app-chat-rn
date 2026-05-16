@@ -4,20 +4,152 @@ import { ObjectId } from "bson";
 import Helpers from "../libs/helpers";
 import MessageService from "../service/message.service";
 import db from "../libs/db";
+import {
+    prepareMessageFromSocket,
+    resolveCanonicalRoomId,
+    resolveMessageId,
+} from "../libs/normalize-socket-message";
 import UploadService from "../service/upload.service";
 import { Messages } from "../models/messages.model";
+import useAuthStore from "./useAuth";
+import useRoomStore from "./useRoom";
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+const sanitizeMessageForDB = (msg: MessageType): Record<string, any> => {
+  const clean = {
+    id: msg.id,
+    roomId: msg.roomId,
+    type: msg.type || "text",
+    content: msg.content ? String(msg.content) : "",
+    createdAt: msg.createdAt || new Date().toISOString(),
+    editedAt: msg.editedAt ?? null,
+    deletedAt: msg.deletedAt ?? null,
+    pinned: msg.pinned ? 1 : 0,
+    sender: JSON.stringify(msg.sender || {}),
+    attachments: JSON.stringify((msg.attachments || []).map((a) => ({
+      _id: a._id, kind: a.kind, url: a.url, name: a.name,
+      size: a.size, mimeType: a.mimeType, thumbUrl: a.thumbUrl,
+      width: a.width, height: a.height, duration: a.duration,
+      status: a.status, uploadProgress: a.uploadProgress,
+      uploadedUrl: a.uploadedUrl,
+    }))),
+    reactions: JSON.stringify(msg.reactions || []),
+    reply: JSON.stringify(msg.reply || {}),
+    isMine: msg.isMine ? 1 : 0,
+    isRead: msg.isRead ? 1 : 0,
+    hiddenBy: JSON.stringify(msg.hiddenBy || []),
+    hiddenByMe: msg.hiddenByMe ? 1 : 0,
+    hiddenAt: msg.hiddenAt ?? null,
+    read_by: JSON.stringify(msg.read_by || []),
+    isDeleted: msg.isDeleted ? 1 : 0,
+    read_by_count: msg.read_by_count ?? 0,
+    status: msg.status || "delivered",
+    call_history: JSON.stringify((msg as any).call_history || null),
+  };
+  return clean;
+};
+
+const sanitizeMessageFromAPI = (msg: any): MessageType => {
+  const currentUser = useAuthStore.getState().user;
+  const hiddenBy: string[] = Array.isArray(msg.hiddenBy) ? msg.hiddenBy : [];
+  const rawRoomId = String(msg.roomId ?? msg.room_id ?? "");
+  return {
+    id: resolveMessageId(msg) || msg.id,
+    roomId: resolveCanonicalRoomId(rawRoomId),
+    type: msg.type || "text",
+    content: msg.content || "",
+    createdAt: msg.createdAt,
+    editedAt: msg.editedAt ?? null,
+    deletedAt: msg.deletedAt ?? null,
+    pinned: !!msg.pinned,
+    sender: msg.sender || { _id: "", fullname: "Unknown", avatar: "" },
+    attachments: (msg.attachments || []).map((a: any) => ({
+      _id: a._id, kind: a.kind, url: a.url, name: a.name,
+      size: a.size, mimeType: a.mimeType, thumbUrl: a.thumbUrl,
+      width: a.width, height: a.height, duration: a.duration,
+      status: a.status, uploadProgress: a.uploadProgress,
+      uploadedUrl: a.uploadedUrl,
+    })),
+    reactions: msg.reactions || [],
+    reply: msg.reply || undefined,
+    isMine: msg.sender?._id === currentUser?._id || msg.sender?.id === currentUser?._id,
+    isRead: true,
+    hiddenBy,
+    hiddenByMe: hiddenBy.includes(currentUser?._id || ""),
+    hiddenAt: msg.hiddenAt ?? null,
+    read_by: msg.read_by || [],
+    isDeleted: !!msg.isDeleted,
+    read_by_count: msg.read_by_count ?? 0,
+    status: (msg.status || "delivered") as MessageType["status"],
+  };
+};
+
+// ── Store ────────────────────────────────────────────────────────────
+
+const parseMessageFromDB = (row: Record<string, unknown>): MessageType => {
+  const parseJson = <T,>(v: unknown, fallback: T): T => {
+    if (v == null) return fallback;
+    if (typeof v === "string") {
+      try {
+        return JSON.parse(v) as T;
+      } catch {
+        return fallback;
+      }
+    }
+    return v as T;
+  };
+  return sanitizeMessageFromAPI({
+    ...row,
+    sender: parseJson(row.sender, { _id: "", fullname: "Unknown", avatar: "" }),
+    attachments: parseJson(row.attachments, []),
+    reactions: parseJson(row.reactions, []),
+    reply: parseJson(row.reply, undefined),
+    hiddenBy: parseJson(row.hiddenBy, []),
+    read_by: parseJson(row.read_by, []),
+    pinned: !!row.pinned,
+    isMine: !!row.isMine,
+    isDeleted: !!row.isDeleted,
+    hiddenByMe: !!row.hiddenByMe,
+  });
+};
 
 interface MessageState {
-    messagesRoom: Record<string, RoomData>; // roomId -> room data;
-    readedRooms: Record<string, string>; // roomId -> lastMessageId;
+    messagesRoom: Record<string, RoomData>;
+    readedRooms: Record<string, string>;
     isLoading: boolean;
+    // Core
     sendMessage: (payload: SendMessageArgs) => void;
+    resendMessage: (roomId: string, messageId: string, socket?: any) => Promise<void>;
+    loadRoomFromCache: (
+      roomId: string,
+      limit?: number,
+    ) => Promise<{ cached: MessageType[]; fetched: Promise<void> }>;
     getMessages: (roomId: string, pivotMessageId?: string, direction?: "new" | "old") => Promise<boolean>;
-    upsertMessage: (msg: MessageType) => Promise<void>;
+    fetchNewMessages: (roomId: string, lastMessageId?: string) => Promise<void>;
+    loadOlderMessages: (roomId: string, limit?: number) => Promise<MessageType[]>;
+    findMessage: (roomId: string, messageId: string) => Promise<boolean>;
+    // Upsert / Delete / Recall
+    upsertMessage: (msg: MessageType | Record<string, unknown>) => Promise<void>;
+    /** Alias matching app-chat-fe `upsetMsg` — handles socket `message:upsert`. */
+    upsetMsg: (msg: MessageType | Record<string, unknown>) => Promise<void>;
+    deleteMessage: (roomId: string, messageId: string) => Promise<void>;
+    recallMessage: (roomId: string, messageId: string) => Promise<void>;
+    // Attachments
     sendMessageWithAttachments: (roomId: string, messageId: string, attachments: FilePreview[], socket: any, data: MessageType) => Promise<void>;
     updateAttachmentProgress: (roomId: string, messageId: string, fileId: string, progress: number, status?: string) => void;
+    autoMarkMessageSent: (roomId: string, messageId: string, delayMs?: number) => void;
+    // Reactions
     addReaction: (roomId: string, messageId: string, emoji: string, userId: string) => void;
     removeReaction: (roomId: string, messageId: string, emoji: string, userId: string) => void;
+    // Draft state
+    setReplyMessage: (roomId: string, message: MessageType | null) => void;
+    setInput: (roomId: string, input: string | null) => void;
+    setAttachments: (roomId: string, attachments: FilePreview[] | null) => void;
+    // Pin
+    togglePin: (roomId: string, messageId: string, pinned: boolean) => void;
+    // Error handling
+    upsetMsgError: (payload: { message: string; error: string; data: { roomId: string; id?: string; content: string } }) => void;
 }
 
 const useMessageStore = create<MessageState>()(
@@ -25,416 +157,608 @@ const useMessageStore = create<MessageState>()(
         messagesRoom: {},
         readedRooms: {},
         isLoading: false,
+
+        // ── Send Message ──────────────────────────────────────────
         sendMessage: async (payload) => {
-            set({ isLoading: true });
             const { roomId, type, content, replyTo, socket, attachments, userId, userFullname, userAvatar } = payload;
-            // Lưu dữ liệu tạm trước khi gửi
-            const prevRoom = get().messagesRoom[roomId] || {};
+            const prevRoom = get().messagesRoom[roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
+            const prevMessages = prevRoom.messages || [];
 
             const id = new ObjectId().toHexString();
-            const data: MessageType = {
-                id,
-                roomId: roomId,
-                content: content,
-                attachments: attachments || [],
-                reply: undefined,
-                type: type || "text",
-                createdAt: new Date().toISOString(),
-                pinned: false,
-                sender: {
-                  _id: userId || "",
-                  id: userId || "",
-                  fullname: userFullname || "Unknown",
-                  avatar: userAvatar || "",
-                },
-                isMine: true,
-                isRead: true,
-                status: attachments && attachments.length > 0 ? "uploading" : "pending",
-                hiddenByMe: false,
-                hiddenAt: null,
-                isDeleted: false,
-             };
+            const foundReply = prevMessages.find((m) => m.id === replyTo);
+            const reply = foundReply
+                ? { _id: foundReply.id, type: foundReply.type, content: foundReply.content, createdAt: foundReply.createdAt, sender: { _id: foundReply.sender._id, name: foundReply.sender.fullname || "Unknown" }, isMine: false, hiddenByMe: false, isDeleted: false }
+                : undefined;
 
-             // Thêm dữ liệu tạm vào messages để hiển thị ngay
+            const data: MessageType = {
+                id, roomId, content, attachments: attachments || [], reply,
+                type: type || "text", createdAt: new Date().toISOString(), pinned: false,
+                sender: { _id: userId || "", id: userId || "", fullname: userFullname || "Unknown", avatar: userAvatar || "" },
+                isMine: true, isRead: true,
+                status: attachments && attachments.length > 0 ? "uploading" : "pending",
+                hiddenBy: [], hiddenByMe: false, hiddenAt: null, isDeleted: false, read_by: [], read_by_count: 0,
+            };
+
             set({
                 messagesRoom: {
                     ...get().messagesRoom,
-                    [roomId]: {
-                      ...prevRoom,
-                      input: content,
-                      attachments: attachments, // Lưu trực tiếp File[]
-                      ghim: prevRoom.ghim || [],
-                      updatedAt: new Date().toISOString(),
-                      messages: [...(prevRoom.messages || []), data],
-                  },
+                    [roomId]: { ...prevRoom, messages: [...prevMessages, data], updatedAt: new Date().toISOString() },
                 },
             });
 
-            // Nếu có attachments, upload và gửi message
+            // Optimistic room update
+            Promise.resolve().then(() => {
+                try {
+                    const roomStore = useRoomStore.getState();
+                    const targetRoom = roomStore.rooms.find((r) => r.id === roomId || r.roomId === roomId);
+                    if (targetRoom) {
+                        let snippet = content || "";
+                        if (attachments && attachments.length > 0) {
+                            const first = attachments[0];
+                            snippet = first.mimeType?.startsWith("image") || first.kind === "image" ? "[Hình ảnh]" : "[Tệp]";
+                        }
+                        roomStore.updateRoomLastMessage(roomId, {
+                            id, content: snippet, createdAt: data.createdAt,
+                            sender: { id: userId, name: userFullname || "", avatar: userAvatar || "" },
+                            isMine: true,
+                        });
+                    }
+                } catch (_) { /* no-op */ }
+            });
+
             if (attachments && attachments.length > 0) {
-              await get().sendMessageWithAttachments(roomId, id, attachments, socket, data);
-              return;
+                await get().sendMessageWithAttachments(roomId, id, attachments, socket, data);
+                return;
             }
 
-            
-            socket?.emit("message:send", {
-                roomId,
-                type,
-                content,
-                replyTo,
-                id,
-            });
-            set({ isLoading: false });
+            socket?.emit("message:send", { roomId, type, content, replyTo, id });
+            get().autoMarkMessageSent(roomId, id, 3000);
         },
-        sendMessageWithAttachments: async ( 
-          roomId: string,
-          messageId: string,
-          attachments: FilePreview[],
-          socket: any,
-          data: MessageType
-        ) => {
-          const filesToUpload = attachments.filter((att) => att.file);
-          const fileIds = filesToUpload.map((att) => att._id);
-          const files = filesToUpload.map((att) => att.file!);
-          // Cập nhật progress upload
-          filesToUpload.forEach(async (file) => {
-            get().updateAttachmentProgress(
-              roomId,
-              messageId,
-              file._id,
-              0,
-              "uploading"
-            );
-          });
-          console.log('files', filesToUpload);
-          // Upload files
-           try {
-            // Upload song song với progress tracking - sử dụng _id có sẵn của FilePreview
-            const uploadedResults = await UploadService.uploadMultipleParallel(
-              files,
-              {
-                roomId,
-                id: fileIds,
-                onEachProgress: (index, progress) => {
-                  const fileId = filesToUpload[index]._id;
-                  get().updateAttachmentProgress(
-                    roomId,
-                    messageId,
-                    fileId,
-                    progress,
-                    "uploading"
-                  );
-                },
-              }
-            );
 
-            console.log('uploadedResults', uploadedResults);
-  
-            // Cập nhật attachments với URL đã upload
-            const updatedAttachments = attachments.map((att) => {
-              const uploadIndex = filesToUpload.findIndex(
-                (f) => f._id === att._id
-              );
-              if (uploadIndex === -1) return att; // File đã upload trước đó
-  
-              const uploadResult = uploadedResults[uploadIndex];
-  
-              // Revoke blob URL cũ
-              if (att.url.startsWith("blob:")) {
-                URL.revokeObjectURL(att.url);
-              }
-  
-              return {
-                ...att,
-                // _id giữ nguyên (đã dùng att._id khi upload, server trả về cùng _id)
-                _id: uploadResult._id,
-                uploadedUrl: uploadResult.url,
-                url: uploadResult.url, // Update main URL từ server
-                kind: uploadResult.kind || att.kind, // Cập nhật kind từ server
-                name: uploadResult.name || att.name, // Cập nhật name từ server
-                size: uploadResult.size || att.size, // Cập nhật size từ server
-                mimeType: uploadResult.mimeType || att.mimeType, // Cập nhật mimeType từ server
-                status: "uploaded",
-                uploadProgress: 100,
-                file: undefined, // Xóa file gốc sau khi upload
-              } as FilePreview;
-            });
-  
-            // Cập nhật attachments trong message
+        // ── Resend Message ───────────────────────────────────────
+        resendMessage: async (roomId, messageId, socket) => {
             const currentRoom = get().messagesRoom[roomId];
-            const updatedMessages = (currentRoom?.messages || []).map((msg) =>
-              msg.id === messageId
-                ? { ...msg, attachments: updatedAttachments }
-                : msg
+            if (!currentRoom?.messages) return;
+            const message = currentRoom.messages.find((m) => m.id === messageId);
+            if (!message) return;
+
+            const updatedMessages = currentRoom.messages.map((m) =>
+                m.id === messageId ? { ...m, status: "pending" as const } : m
             );
-  
-            // Cập nhật state
             set({
-              messagesRoom: {
-                ...get().messagesRoom,
-                [roomId]: {
-                  ...currentRoom,
-                  messages: updatedMessages,
-                },
-              },
+                messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: updatedMessages } },
             });
 
-            console.log('updatedAttachments', updatedAttachments);
-
-            socket?.emit("message:send", {
-              roomId,
-              type: data.type,
-              content: data.content,
-              replyTo: data.reply?._id,
-              id: messageId,
-              attachments: updatedAttachments.map((att) => att._id),
-            });
-  
-          } catch (error) {
-            // Đánh dấu tất cả là "failed"
-            for (const att of filesToUpload) {
-              get().updateAttachmentProgress(
-                roomId,
-                messageId,
-                att._id,
-                0,
-                "failed"
-              );
+            if (!message.attachments || message.attachments.length === 0) {
+                socket?.emit("message:send", { roomId, type: message.type, content: message.content, replyTo: message.reply?._id, id: messageId });
+                get().autoMarkMessageSent(roomId, messageId, 3000);
+                return;
             }
-          }
-        },
-        updateAttachmentProgress: (
-          roomId: string,
-          messageId: string,
-          fileId: string,
-          progress: number,
-          status?: string
-        ) => {
-          const currentRoom = get().messagesRoom[roomId];
-          if (!currentRoom?.messages) return;
-  
-          // Tìm message và cập nhật attachment progress
-          const updatedMessages = currentRoom.messages.map((msg) => {
-            if (msg.id !== messageId) return msg;
-  
-            const updatedAttachments = (msg.attachments || []).map((att) =>
-              att._id === fileId
-                ? {
-                    ...att,
-                    uploadProgress: progress,
-                    ...(status && { status }),
-                  }
-                : att
-            );
-  
-            return {
-              ...msg,
-              attachments: updatedAttachments,
-            };
-          });
-  
-          set({
-            messagesRoom: {
-              ...get().messagesRoom,
-              [roomId]: {
-                ...currentRoom,
-                messages: updatedMessages,
-              },
-            },
-          });
-        },
-        getMessages: async (roomId: string, pivotMessageId?: string, direction: "new" | "old" = "new") => {
+
             try {
-                set((state) => ({
-                  ...state,
-                  isLoading: true,
-                }));
-      
-                // Lấy tin nhắn mới từ API
-                const response = await MessageService.getMessages({
-                  roomId,
-                  queryParams: {
-                    msgId: pivotMessageId, // Lấy tin nhắn quanh ID này
+                const uploadResult = await UploadService.uploadMultipleParallel(
+                    message.attachments.filter((a) => a.status === "failed").map((a) => a.file!).filter(Boolean),
+                    { roomId, id: message.attachments.filter((a) => a.status === "failed").map((a) => a._id), onEachProgress: () => {} },
+                );
+                socket?.emit("message:send", { roomId, type: message.type, content: message.content, replyTo: message.reply?._id, id: messageId, attachments: uploadResult.map((r: any) => r._id) });
+                get().autoMarkMessageSent(roomId, messageId, 3000);
+            } catch {
+                const currentRoom = get().messagesRoom[roomId];
+                if (!currentRoom?.messages) return;
+                const msgs = currentRoom.messages.map((m) => m.id === messageId ? { ...m, status: "failed" as const } : m);
+                set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+            }
+        },
+
+        // ── Auto Mark Sent ─────────────────────────────────────────
+        autoMarkMessageSent: (roomId, messageId, delayMs = 3000) => {
+            setTimeout(() => {
+                const currentRoom = get().messagesRoom[roomId];
+                if (!currentRoom?.messages) return;
+                const message = currentRoom.messages.find((m) => m.id === messageId);
+                if (message && message.status === "pending") {
+                    const msgs = currentRoom.messages.map((m) =>
+                        m.id === messageId ? { ...m, status: "sent" as const } : m
+                    );
+                    set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+                }
+            }, delayMs);
+        },
+
+        // ── Send with Attachments ──────────────────────────────────
+        sendMessageWithAttachments: async (roomId, messageId, attachments, socket, data) => {
+            const filesToUpload = attachments.filter((att) => att.file);
+            const fileIds = filesToUpload.map((att) => att._id);
+            const files = filesToUpload.map((att) => att.file!);
+
+            filesToUpload.forEach((file) => {
+                get().updateAttachmentProgress(roomId, messageId, file._id, 0, "uploading");
+            });
+
+            try {
+                const uploadedResults = await UploadService.uploadMultipleParallel(files, {
+                    roomId, id: fileIds,
+                    onEachProgress: (index, progress) => {
+                        get().updateAttachmentProgress(roomId, messageId, filesToUpload[index]._id, progress, "uploading");
+                    },
+                });
+
+                const updatedAttachments = attachments.map((att) => {
+                    const uploadIndex = filesToUpload.findIndex((f) => f._id === att._id);
+                    if (uploadIndex === -1) return att;
+                    const result = uploadedResults[uploadIndex];
+                    return { ...att, _id: result._id, uploadedUrl: result.url, url: result.url, kind: result.kind || att.kind, name: result.name || att.name, size: result.size || att.size, mimeType: result.mimeType || att.mimeType, status: "uploaded", uploadProgress: 100, file: undefined } as FilePreview;
+                });
+
+                const currentRoom = get().messagesRoom[roomId];
+                if (currentRoom?.messages) {
+                    const msgs = currentRoom.messages.map((m) => m.id === messageId ? { ...m, attachments: updatedAttachments } : m);
+                    set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+                }
+
+                socket?.emit("message:send", { roomId, type: data.type, content: data.content, replyTo: data.reply?._id, id: messageId, attachments: updatedAttachments.filter((a) => a.status === "uploaded").map((a) => a._id) });
+                get().autoMarkMessageSent(roomId, messageId, 3000);
+            } catch {
+                for (const att of filesToUpload) {
+                    get().updateAttachmentProgress(roomId, messageId, att._id, 0, "failed");
+                }
+            }
+        },
+
+        // ── Update Attachment Progress ─────────────────────────────
+        updateAttachmentProgress: (roomId, messageId, fileId, progress, status) => {
+            const currentRoom = get().messagesRoom[roomId];
+            if (!currentRoom?.messages) return;
+            const msgs = currentRoom.messages.map((msg) => {
+                if (msg.id !== messageId) return msg;
+                const updatedAttachments = (msg.attachments || []).map((att) =>
+                    att._id === fileId ? { ...att, uploadProgress: progress, ...(status && { status }) } : att
+                );
+                return { ...msg, attachments: updatedAttachments };
+            });
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+        },
+
+        // ── Load room: SQLite cache first, then delta/full API (app-chat-fe) ──
+        loadRoomFromCache: async (roomId, limit = 20) => {
+            const chatId = resolveCanonicalRoomId(roomId);
+            if (!chatId) return { cached: [], fetched: Promise.resolve() };
+
+            let cached: MessageType[] = [];
+            try {
+                const rows =
+                    (await Messages.getInstance()
+                        .getQuery()
+                        .where("roomId", "=", chatId)
+                        .orderBy("createdAt", "DESC")
+                        .limit(limit)
+                        .get()) ?? [];
+                cached = (rows as Record<string, unknown>[])
+                    .map(parseMessageFromDB)
+                    .reverse();
+            } catch {
+                cached = [];
+            }
+
+            if (cached.length > 0) {
+                const currentRoom =
+                    get().messagesRoom[chatId] || {
+                        messages: [],
+                        input: null,
+                        attachments: null,
+                        ghim: [],
+                        updatedAt: null,
+                    };
+                const existing = currentRoom.messages || [];
+                const cachedIds = new Set(cached.map((m) => m.id));
+                const socketOnly = existing.filter((m) => !cachedIds.has(m.id));
+                const merged = [...cached, ...socketOnly].sort(
+                    (a, b) =>
+                        new Date(a.createdAt).getTime() -
+                        new Date(b.createdAt).getTime(),
+                );
+                set({
+                    messagesRoom: {
+                        ...get().messagesRoom,
+                        [chatId]: {
+                            ...currentRoom,
+                            messages: merged,
+                            updatedAt: new Date().toISOString(),
+                        },
+                    },
+                });
+            }
+
+            const room = useRoomStore
+                .getState()
+                .rooms.find((r) => r.id === chatId || r.roomId === chatId);
+            const serverLatestId = room?.last_message?.id ?? null;
+            const latestCachedId = cached[cached.length - 1]?.id;
+            const cacheIsFresh =
+                !!latestCachedId &&
+                !!serverLatestId &&
+                latestCachedId === serverLatestId;
+
+            if (cacheIsFresh) {
+                return { cached, fetched: Promise.resolve() };
+            }
+
+            if (cached.length === 0 && !serverLatestId) {
+                return { cached, fetched: Promise.resolve() };
+            }
+
+            const fetched = (async () => {
+                if (latestCachedId) {
+                    await get().fetchNewMessages(chatId, latestCachedId);
+                } else {
+                    const response = await MessageService.getMessages({
+                        roomId: chatId,
+                        queryParams: { limit },
+                    });
+                    const fresh = (response.data.metadata || []).map(
+                        (msg: unknown) =>
+                            sanitizeMessageFromAPI({
+                                ...(msg as object),
+                                roomId: chatId,
+                            }),
+                    );
+                    if (fresh.length === 0) return;
+
+                    for (const msg of fresh) {
+                        await Messages.getInstance()
+                            .getQuery()
+                            .upsert(sanitizeMessageForDB(msg as MessageType));
+                    }
+
+                    const prevRoom =
+                        get().messagesRoom[chatId] || {
+                            messages: [],
+                            input: null,
+                            attachments: null,
+                            ghim: [],
+                            updatedAt: null,
+                        };
+                    const prevMessages = prevRoom.messages || [];
+                    const apiIds = new Set(fresh.map((m) => m.id));
+                    const socketOnly = prevMessages.filter(
+                        (m) => !apiIds.has(m.id),
+                    );
+                    const merged = [...fresh, ...socketOnly].sort(
+                        (a, b) =>
+                            new Date(a.createdAt).getTime() -
+                            new Date(b.createdAt).getTime(),
+                    );
+                    set({
+                        messagesRoom: {
+                            ...get().messagesRoom,
+                            [chatId]: {
+                                ...prevRoom,
+                                messages: merged,
+                                updatedAt: new Date().toISOString(),
+                            },
+                        },
+                    });
+                }
+            })();
+
+            return { cached, fetched };
+        },
+
+        // ── Get Messages ──────────────────────────────────────────
+        getMessages: async (roomId, pivotMessageId?, direction = "new") => {
+            const chatId = resolveCanonicalRoomId(roomId);
+            try {
+                const queryParams: Record<string, string | number> = {
                     limit: 50,
                     type: direction,
-                  },
+                };
+                if (pivotMessageId) queryParams.msgId = pivotMessageId;
+
+                const response = await MessageService.getMessages({
+                    roomId: chatId,
+                    queryParams,
                 });
-      
+
                 if (!response.data.metadata || response.data.metadata.length === 0) {
-                  set((state) => ({ ...state, isLoading: false }));
-                  return false;
+                    return false;
                 }
-      
-                const newMessages = response.data.metadata.map((msg: MessageType) => ({
-                  ...msg,
-                  roomId,
-                  isRead: true,
-                  status: (msg.status || "delivered") as MessageType["status"],
-                }));
-      
-                // Lưu từng tin nhắn vào IndexedDB
-                newMessages.map((msg: MessageType) => {  
-                      Messages.getInstance().getQuery().upsert({
-                        ...msg,
-                        sender: JSON.stringify(msg.sender || {}),
-                        attachments: JSON.stringify(msg.attachments || []),
-                        reactions: JSON.stringify(msg.reactions || []),
-                        reply: JSON.stringify(msg.reply || {}),
-                        read_by: JSON.stringify(msg.read_by || []),
-                      });
-                });
-      
-                // Cập nhật state
-                const currentRoom = get().messagesRoom[roomId] || {};
-                const currentMessages = (currentRoom as any).messages || [];
+
+                const newMessages = response.data.metadata.map((msg: any) =>
+                    sanitizeMessageFromAPI({ ...msg, roomId: chatId }),
+                );
+
+                for (const msg of newMessages) {
+                    await Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(msg as any));
+                }
+
+                const freshRoom = get().messagesRoom[chatId] || {
+                    messages: [],
+                    input: null,
+                    attachments: null,
+                    ghim: [],
+                    updatedAt: null,
+                };
+                const freshMessages = freshRoom.messages || [];
 
                 if (direction === "new") {
-                  const messages = newMessages.slice(0, 20);
-                  // lấy id của tin nhắn mới nhất
-                  const lastNewMessageId = messages[messages.length - 1].id;
-                  set((state) => ({
-                    ...state,
-                    readedRooms: {
-                      ...state.readedRooms,
-                      [roomId]: lastNewMessageId,
-                    },
-                    messagesRoom: {
-                      ...state.messagesRoom,
-                      [roomId]: {
-                        ...currentRoom,
-                        messages: messages, // Lấy 20 tin nhắn mới nhất
-                        input: currentRoom.input || null,
-                        attachments: currentRoom.attachments || null,
-                        ghim: currentRoom.ghim || null,
-                        updatedAt: new Date().toISOString(),
-                      },
-                    },
-                    isLoading: false,
-                  }));
-                } else {
-                  // Lọc ra những tin nhắn chưa có trong state
-                  const uniqueNewMessages = newMessages.filter(
-                    (newMsg: MessageType) =>
-                      !currentMessages.some((msg: MessageType) => msg.id === newMsg.id)
-                  );
-
-                  const mergedMessages = [...currentMessages, ...uniqueNewMessages];
-
-                  const sortedMessages = mergedMessages.sort(
-                    (a: MessageType, b: MessageType) =>
-                      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-                  );
-
-                  if (uniqueNewMessages.length > 0) {
-                    set((state) => ({
-                      ...state,
-                      readedRooms: {
-                        ...state.readedRooms,
-                        [roomId]: uniqueNewMessages[uniqueNewMessages.length - 1].id,
-                      },
-                      messagesRoom: {
-                        ...state.messagesRoom,
-                        [roomId]: {
-                          ...currentRoom,
-                          messages: sortedMessages,
-                          input: currentRoom.input || null,
-                          attachments: currentRoom.attachments || null,
-                          ghim: currentRoom.ghim || null,
-                          updatedAt: new Date().toISOString(),
+                    const apiIds = new Set(newMessages.map((m: MessageType) => m.id));
+                    const socketOnly = freshMessages.filter((m) => !apiIds.has(m.id));
+                    const merged = [...newMessages, ...socketOnly].sort(
+                        (a, b) =>
+                            new Date(a.createdAt).getTime() -
+                            new Date(b.createdAt).getTime(),
+                    );
+                    const kept = merged.slice(-50);
+                    const lastNewMessageId = kept[kept.length - 1]?.id;
+                    set({
+                        readedRooms: {
+                            ...get().readedRooms,
+                            [chatId]: lastNewMessageId,
                         },
-                      },
-                      isLoading: false,
-                    }));
-                    return true;
-                  }
-                  set((state) => ({ ...state, isLoading: false }));
+                        messagesRoom: {
+                            ...get().messagesRoom,
+                            [chatId]: {
+                                ...freshRoom,
+                                messages: kept,
+                                updatedAt: new Date().toISOString(),
+                            },
+                        },
+                    });
+                } else {
+                    const uniqueNew = newMessages.filter(
+                        (nm) => !freshMessages.some((m) => m.id === nm.id),
+                    );
+                    if (uniqueNew.length > 0) {
+                        const merged = [...uniqueNew, ...freshMessages].sort(
+                            (a, b) =>
+                                new Date(a.createdAt).getTime() -
+                                new Date(b.createdAt).getTime(),
+                        );
+                        set({
+                            messagesRoom: {
+                                ...get().messagesRoom,
+                                [chatId]: {
+                                    ...freshRoom,
+                                    messages: merged,
+                                    updatedAt: new Date().toISOString(),
+                                },
+                            },
+                        });
+                        return true;
+                    }
                 }
                 return true;
-              } catch (error) {
-                set((state) => ({
-                  ...state,
-                  isLoading: false,
-                }));
-                return true;
+            } catch {
+                return false;
             }
         },
-        upsertMessage: async (msg: MessageType) => {
-          if (!msg.roomId) return;
-          msg.status = "delivered";
-          const prevRoom = get().messagesRoom[msg.roomId] || {};
-          const prevMessages = prevRoom.messages || [];
 
-          const existingIndex = prevMessages.findIndex(
-            (m) => m.id === msg.id
-          );
+        // ── Fetch New Messages (delta) ────────────────────────────
+        fetchNewMessages: async (roomId, lastMessageId?) => {
+            try {
+                if (!roomId) return;
+                const response = await MessageService.getMessages({ roomId, queryParams: { msgId: lastMessageId, limit: 50, type: "new" } });
 
-          let updatedMessages: MessageType[];
-          if (existingIndex === -1) {
-            updatedMessages = [...prevMessages, msg];
-          } else {
-            updatedMessages = prevMessages.map((m, idx) =>
-              idx === existingIndex ? msg : m
+                const newMessages = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
+                if (newMessages.length === 0) return;
+
+                for (const msg of newMessages) {
+                    await Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(msg as any));
+                }
+
+                const currentRoom = get().messagesRoom[roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
+                const currentMessages = currentRoom.messages || [];
+                const uniqueNew = newMessages.filter((nm) => !currentMessages.some((m) => m.id === nm.id));
+
+                if (uniqueNew.length > 0) {
+                    const merged = [...currentMessages, ...uniqueNew].sort((a, b) => a.id.localeCompare(b.id));
+                    set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: merged, updatedAt: new Date().toISOString() } } });
+                }
+            } catch (_) { /* no-op */ }
+        },
+
+        // ── Load Older Messages ────────────────────────────────────
+        loadOlderMessages: async (roomId, limit = 50) => {
+            const currentRoom = get().messagesRoom[roomId];
+            const msgs = currentRoom?.messages || [];
+            if (msgs.length === 0) return [];
+            const oldestId = msgs[0]?.id;
+            if (!oldestId) return [];
+
+            try {
+                const response = await MessageService.getMessages({ roomId, queryParams: { msgId: oldestId, limit, type: "old" } });
+                const olderMessages = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
+                if (olderMessages.length === 0) return [];
+
+                const freshRoom = get().messagesRoom[roomId];
+                const freshMessages = freshRoom?.messages || [];
+                const uniqueOlder = olderMessages.filter((om) => !freshMessages.some((m) => m.id === om.id));
+                if (uniqueOlder.length === 0) return [];
+
+                for (const msg of uniqueOlder) {
+                    await Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(msg as any));
+                }
+
+                const updated = [...uniqueOlder, ...freshMessages];
+                set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...(freshRoom || { input: null, attachments: null, ghim: [], updatedAt: null }), messages: updated } } });
+                return uniqueOlder;
+            } catch {
+                return [];
+            }
+        },
+
+        // ── Find Message ──────────────────────────────────────────
+        findMessage: async (roomId, messageId) => {
+            if (!messageId || messageId === "null" || messageId === "undefined") return false;
+            try {
+                const response = await MessageService.getMessages({ roomId, queryParams: { msgId: messageId, limit: 50, type: "around" } });
+                const messages = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
+                if (messages.length > 0) {
+                    for (const msg of messages) {
+                        await Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(msg as any));
+                    }
+                    await get().getMessages(roomId);
+                    return messages.some((m) => m.id === messageId);
+                }
+                return false;
+            } catch {
+                return false;
+            }
+        },
+
+        // ── Upsert Message (from socket) ───────────────────────────
+        upsertMessage: async (msgInput) => {
+            const prepared = prepareMessageFromSocket(
+                msgInput as Record<string, unknown>,
             );
-          }
+            if (!prepared) return;
 
-          set({
-            messagesRoom: {
-              ...get().messagesRoom,
-              [msg.roomId]: {
-                ...prevRoom,
-                messages: updatedMessages,
-                ...(msg.isRead && { last_message_id: msg.id }),
-              },
-            },
-          });
-        },
-        // ── Reactions ──────────────────────────────────────────────────
-        addReaction: (roomId: string, messageId: string, emoji: string, userId: string) => {
-          const room = get().messagesRoom[roomId];
-          if (!room?.messages) return;
-          const updatedMessages = room.messages.map((msg) => {
-            if (msg.id !== messageId) return msg;
-            const reactions = [...(msg.reactions || [])];
-            const existingIdx = reactions.findIndex((r) => r.emoji === emoji);
-            if (existingIdx >= 0) {
-              reactions[existingIdx] = {
-                ...reactions[existingIdx],
-                userIds: [...(reactions[existingIdx].userIds || []), userId],
-                count: (reactions[existingIdx].count || 0) + 1,
-              };
+            const msg = { ...prepared, status: "delivered" } as MessageType;
+            const sanitized = sanitizeMessageFromAPI(msg);
+
+            // Persist to DB
+            Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(sanitized as any))
+                .catch((e: any) => console.warn("upsertMessage DB persist failed:", e));
+
+            const prevRoom = get().messagesRoom[sanitized.roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
+            const prevMessages = prevRoom.messages || [];
+            const existingIndex = prevMessages.findIndex((m) => m.id === sanitized.id);
+
+            let updatedMessages: MessageType[];
+            if (existingIndex === -1) {
+                updatedMessages = [...prevMessages, sanitized];
             } else {
-              reactions.push({ emoji, count: 1, userIds: [userId] });
+                updatedMessages = prevMessages.map((m, idx) => idx === existingIndex ? sanitized : m);
             }
-            return { ...msg, reactions };
-          });
-          set({
-            messagesRoom: {
-              ...get().messagesRoom,
-              [roomId]: { ...room, messages: updatedMessages },
-            },
-          });
+
+            set({
+                messagesRoom: {
+                    ...get().messagesRoom,
+                    [sanitized.roomId]: { ...prevRoom, messages: updatedMessages, ...(sanitized.isRead && { last_message_id: sanitized.id }) },
+                },
+            });
+
+            // Update room last_message + unread count
+            Promise.resolve().then(() => {
+                try {
+                    const roomStore = useRoomStore.getState();
+                    const targetRoom = roomStore.rooms.find((r) => r.id === sanitized.roomId || r.roomId === sanitized.roomId);
+                    if (targetRoom) {
+                        let snippet = sanitized.content || "";
+                        if (sanitized.type === "image") snippet = "[Hình ảnh]";
+                        else if (sanitized.attachments?.length) {
+                            const first = sanitized.attachments[0];
+                            snippet = first.mimeType?.startsWith("image") || first.kind === "image" ? "[Hình ảnh]" : "[Tệp]";
+                        }
+                        const isActiveRoom = roomStore.room?.id === sanitized.roomId;
+                        let newUnread = targetRoom.unread_count;
+                        if (!sanitized.isMine && !isActiveRoom && existingIndex === -1) {
+                            newUnread = (targetRoom.unread_count || 0) + 1;
+                        }
+                        if (isActiveRoom) newUnread = 0;
+                        roomStore.updateRoomLastMessage(sanitized.roomId, {
+                            id: sanitized.id, content: snippet, createdAt: sanitized.createdAt,
+                            sender: { id: sanitized.sender._id, name: sanitized.sender.fullname || "", avatar: sanitized.sender.avatar || "" },
+                            isMine: sanitized.isMine,
+                        });
+                    }
+                } catch (_) { /* no-op */ }
+            });
         },
-        removeReaction: (roomId: string, messageId: string, emoji: string, userId: string) => {
-          const room = get().messagesRoom[roomId];
-          if (!room?.messages) return;
-          const updatedMessages = room.messages.map((msg) => {
-            if (msg.id !== messageId) return msg;
-            const reactions = (msg.reactions || [])
-              .map((r) => {
-                if (r.emoji !== emoji) return r;
-                const userIds = (r.userIds || []).filter((id) => id !== userId);
-                const count = userIds.length;
-                return count > 0 ? { ...r, userIds, count } : null;
-              })
-              .filter(Boolean);
-            return { ...msg, reactions };
-          });
-          set({
-            messagesRoom: {
-              ...get().messagesRoom,
-              [roomId]: { ...room, messages: updatedMessages },
-            },
-          });
+
+        upsetMsg: async (msgInput) => get().upsertMessage(msgInput),
+
+        // ── Delete Message ─────────────────────────────────────────
+        deleteMessage: async (roomId, messageId) => {
+            const currentRoom = get().messagesRoom[roomId];
+            if (!currentRoom?.messages) return;
+            const msgs = currentRoom.messages.filter((m) => m.id !== messageId);
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+            try { await db.setTable("messages").where("id", "=", messageId).delete(); } catch (_) { /* no-op */ }
+        },
+
+        // ── Recall Message ────────────────────────────────────────
+        recallMessage: async (roomId, messageId) => {
+            const currentRoom = get().messagesRoom[roomId];
+            if (!currentRoom?.messages) return;
+            const msgs = currentRoom.messages.map((m) =>
+                m.id === messageId ? { ...m, isDeleted: true, content: "", status: "recalled" as const } : m
+            );
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+            try {
+                await db.setTable("messages").where("id", "=", messageId).update({ isDeleted: 1, content: "", status: "recalled" } as any);
+            } catch (_) { /* no-op */ }
+        },
+
+        // ── Toggle Pin ────────────────────────────────────────────
+        togglePin: (roomId, messageId, pinned) => {
+            const currentRoom = get().messagesRoom[roomId];
+            if (!currentRoom?.messages) return;
+            const msgs = currentRoom.messages.map((m) => m.id === messageId ? { ...m, pinned } : m);
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+        },
+
+        // ── Upsert Message Error ──────────────────────────────────
+        upsetMsgError: (payload) => {
+            const { roomId, id, content } = payload.data || {};
+            if (!roomId || !id) return;
+            const currentRoom = get().messagesRoom[roomId];
+            if (!currentRoom?.messages) return;
+            const msgs = currentRoom.messages.map((m) =>
+                m.id === id ? { ...m, status: "failed" as const } : m
+            );
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
+        },
+
+        // ── Reactions ──────────────────────────────────────────────
+        addReaction: (roomId, messageId, emoji, userId) => {
+            const room = get().messagesRoom[roomId];
+            if (!room?.messages) return;
+            const msgs = room.messages.map((msg) => {
+                if (msg.id !== messageId) return msg;
+                const reactions = [...(msg.reactions || [])];
+                const existingIdx = reactions.findIndex((r) => r.emoji === emoji);
+                if (existingIdx >= 0) {
+                    reactions[existingIdx] = { ...reactions[existingIdx], users: [...(reactions[existingIdx].users || []), { _id: userId, usr_id: userId, usr_fullname: "", usr_avatar: "" }], count: (reactions[existingIdx].count || 0) + 1 };
+                } else {
+                    reactions.push({ emoji, count: 1, users: [{ _id: userId, usr_id: userId, usr_fullname: "", usr_avatar: "" }] });
+                }
+                return { ...msg, reactions };
+            });
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...room, messages: msgs } } });
+        },
+
+        removeReaction: (roomId, messageId, emoji, userId) => {
+            const room = get().messagesRoom[roomId];
+            if (!room?.messages) return;
+            const msgs = room.messages.map((msg) => {
+                if (msg.id !== messageId) return msg;
+                const reactions = (msg.reactions || [])
+                    .map((r) => {
+                        if (r.emoji !== emoji) return r;
+                        const users = (r.users || []).filter((u: any) => u._id !== userId && u.usr_id !== userId);
+                        return users.length > 0 ? { ...r, users, count: users.length } : null;
+                    })
+                    .filter(Boolean);
+                return { ...msg, reactions };
+            });
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...room, messages: msgs } } });
+        },
+
+        // ── Draft State ────────────────────────────────────────────
+        setReplyMessage: (roomId, message) => {
+            const currentRoom = get().messagesRoom[roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, reply: message as any } } });
+        },
+
+        setInput: (roomId, input) => {
+            const currentRoom = get().messagesRoom[roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, input } } });
+        },
+
+        setAttachments: (roomId, attachments) => {
+            const currentRoom = get().messagesRoom[roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
+            set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, attachments } } });
         },
     })
 );

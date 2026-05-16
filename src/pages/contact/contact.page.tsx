@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScrollView, TouchableOpacity, Text, View } from 'react-native';
+import { TouchableOpacity, Text, View, StyleSheet } from 'react-native';
 import { HStack } from '@/src/components/ui/hstack';
 import { ContactTabFriends } from '@/src/components/contact/contact-tab-friends.component';
 import { ContactTabGroups } from '@/src/components/contact/contact-tab-groups.component';
@@ -32,7 +32,6 @@ const ContactPage = () => {
     pending: '',
   });
   const navigation = useNavigation<NativeStackNavigationProp<MainStackParamList>>();
-
   const currentSearchQuery = searchQueries[activeTab];
 
   const handleSearchChange = (text: string) => {
@@ -74,7 +73,7 @@ const ContactPage = () => {
           onSearchChange={handleSearchChange}
           searchValue={currentSearchQuery}
         />
-      <ScrollView className='flex-1 bg-white'>
+      <View style={styles.container}>
       {/* Tab Navigation */}
       <HStack className="bg-white border-b border-gray-200">
         {tabs.map((tab) => (
@@ -104,8 +103,8 @@ const ContactPage = () => {
         ))}
       </HStack>
 
-      {/* Tab Content */}
-      <View style={{ paddingBottom: 20 }}>
+      {/* Tab Content — không bọc ScrollView: tránh FlatList trong ScrollView */}
+      <View style={styles.tabContent}>
         {activeTab === 'friends' && (
           <ContactTabFriends key="friends" searchQuery={searchQueries.friends} />
         )}
@@ -122,10 +121,15 @@ const ContactPage = () => {
           <ContactTabPending key="pending" searchQuery={searchQueries.pending} />
         )}
       </View>
-      </ScrollView>
+      </View>
     </>
   );
 };
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  tabContent: { flex: 1 },
+});
 
 export default ContactPage;
 

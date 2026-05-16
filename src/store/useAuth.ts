@@ -12,6 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthState, PayloadLogin, PayloadRegister, PayloadLogout, PayloadForgotPassword, PayloadVerifyOtp, PayloadResetPassword, AuthMetadata } from "../types/auth.type";
 import { User } from "../types/user.type";
 import AuthService from "../service/auth.service";
+import { normalizeAuthUser } from "../libs/normalize-auth-user";
 
 // ── Token Storage helpers (AsyncStorage) ─────────────────────────────
 const ACCESS_TOKEN_KEY = "accessToken";
@@ -161,16 +162,39 @@ const useAuthStore = create<AuthState>()(
       try {
         const response = await AuthService.getMe();
         const data = response.data as
-          | { metadata?: { user?: any }; user?: any }
+          | {
+              metadata?: { user?: Record<string, unknown> } | Record<string, unknown>;
+              user?: Record<string, unknown>;
+            }
           | undefined;
-        const user = data?.metadata?.user ?? data?.user;
+
+        const rawUser =
+          (data?.metadata &&
+          typeof data.metadata === "object" &&
+          "user" in data.metadata
+            ? data.metadata.user
+            : undefined) ??
+          data?.user ??
+          (data?.metadata &&
+          typeof data.metadata === "object" &&
+          ("fullname" in data.metadata || "usr_fullname" in data.metadata)
+            ? data.metadata
+            : undefined);
+
+        const user = normalizeAuthUser(
+          rawUser as Record<string, unknown> | undefined,
+        );
         if (user) {
           set({ user, isAuthenticated: true });
+          return user;
         }
+        console.warn("[fetchMe] no user in response", data);
+        return null;
       } catch (err: any) {
         const status = err?.statusCode ?? err?.response?.status;
         const message = err?.message || err?.response?.data?.message;
         console.warn(`[fetchMe] failed${status ? ` (${status})` : ""}: ${message}`);
+        throw err;
       }
     },
 
@@ -290,9 +314,13 @@ const useAuthStore = create<AuthState>()(
       set({ isLoading: true });
       try {
         const response = await AuthService.updateProfile(payload);
-        const metadata = response.data.metadata as any;
-        if (metadata?.user) {
-          set({ user: metadata.user, isLoading: false });
+        const metadata = response.data?.metadata as any;
+        const rawUser = metadata?.user ?? metadata;
+        const normalized = normalizeAuthUser(
+          rawUser && typeof rawUser === "object" ? rawUser : undefined,
+        );
+        if (normalized) {
+          set({ user: normalized, isLoading: false });
         } else {
           const currentUser = get().user;
           if (currentUser) {
@@ -302,6 +330,7 @@ const useAuthStore = create<AuthState>()(
                 fullname: payload.fullname ?? currentUser.fullname,
                 gender: payload.gender ?? currentUser.gender,
                 dateOfBirth: payload.dateOfBirth ?? currentUser.dateOfBirth,
+                address: payload.address ?? currentUser.address,
                 email: payload.email ?? currentUser.email,
                 phone: payload.phone ?? currentUser.phone,
               },
@@ -373,17 +402,19 @@ const useAuthStore = create<AuthState>()(
   })
 );
 
-// Boot: sync accessToken from AsyncStorage into state
+// Boot: token từ AsyncStorage → fetchMe để có user (giống web AuthBootstrap)
 (async () => {
   try {
     const token = await tokenStorage.get();
-    if (token) {
-      useAuthStore.setState({
-        isAuthenticated: true,
-        tokens: { accessToken: token, refreshToken: null, expiresIn: 0, expiredAt: 0 },
-      });
-    }
-  } catch {}
+    if (!token) return;
+    useAuthStore.setState({
+      isAuthenticated: true,
+      tokens: { accessToken: token, refreshToken: null, expiresIn: 0, expiredAt: 0 },
+    });
+    await useAuthStore.getState().fetchMe();
+  } catch {
+    /* fetchMe logs warning; giữ token để interceptor refresh thử */
+  }
 })();
 
 export default useAuthStore;

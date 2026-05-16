@@ -3,7 +3,7 @@ import { FlatList, TouchableOpacity, Text, View, RefreshControl } from 'react-na
 import { Box } from '@/src/components/ui/box';
 import { HStack } from '@/src/components/ui/hstack';
 import { VStack } from '@/src/components/ui/vstack';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Badge, BadgeText } from '../components/ui/badge';
 import { useNavigation } from '@react-navigation/native';
@@ -12,6 +12,8 @@ import { MainStackParamList } from '../navigations/MainStackNavigator';
 import useRoomStore from '../store/useRoom';
 import Helpers from '../libs/helpers';
 import { ImageAvatar } from '../components/chat/image-avatar.component';
+import HeaderComponent from '../components/headers/headers.component';
+import { MAIN_TAB_BAR_HEIGHT } from '../libs/resolve-media-url';
 import type { Room } from '../types/room.type';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
@@ -57,7 +59,7 @@ const RoomItem = React.memo(({ item, onPress }: { item: Room; onPress: (id: stri
 
 const HomePage = () => {
   const insets = useSafeAreaInsets();
-  const backgroundColor = '#42A59F';
+  const scrollBottomPad = MAIN_TAB_BAR_HEIGHT + insets.bottom + 24;
   const navigation = useNavigation<NavigationProp>();
   const { rooms, getRooms, isLoading } = useRoomStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -93,28 +95,13 @@ const HomePage = () => {
 
   const keyExtractor = useCallback((item: Room) => item.id, []);
 
-  const listHeader = (
-    <>
-      <View style={{ height: insets.top, backgroundColor, position: 'absolute', top: 0, left: 0, right: 0 }} />
-      <HStack className="items-center justify-between mb-4 px-5 pt-5">
-        <Text className="text-[20px] font-bold text-typography-950">Tin nhắn</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Search')}>
-          <FontAwesome name="search" color="#6B7280" size={16} />
-        </TouchableOpacity>
-      </HStack>
-    </>
-  );
-
   const listEmpty = !isLoading ? (
     <VStack className="items-center justify-center py-20 px-5">
       <FontAwesome name="comments" size={64} color="#9CA3AF" />
       <Text className="text-[18px] font-semibold text-gray-500 mt-4 text-center">Chưa có tin nhắn nào</Text>
       <Text className="text-[14px] text-gray-400 mt-2 text-center mb-6">Hãy kết bạn để bắt đầu trò chuyện</Text>
       <TouchableOpacity
-        onPress={() => {
-          const tabNavigator = navigation.getParent();
-          if (tabNavigator) (tabNavigator as any).navigate('AddContact');
-        }}
+        onPress={() => navigation.navigate('AddContact')}
         className="bg-[#42A59F] px-6 py-3 rounded-lg"
         activeOpacity={0.7}
       >
@@ -124,22 +111,32 @@ const HomePage = () => {
   ) : null;
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    <View className="flex-1 bg-white">
+      <HeaderComponent
+        title="Tin nhắn"
+        rightIcon="search"
+        onRightPress={() => navigation.navigate('Search')}
+        backgroundColor="#42A59F"
+        statusBarStyle="light-content"
+        height={64}
+        showStatusBar
+      />
       <FlatList
         data={rooms}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        ListHeaderComponent={listHeader}
         ListEmptyComponent={listEmpty}
-        contentContainerStyle={{ paddingBottom: 20 }}
+        contentContainerStyle={
+          rooms.length === 0 ? { flexGrow: 1, paddingBottom: scrollBottomPad } : { paddingBottom: scrollBottomPad }
+        }
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        removeClippedSubviews={true}
+        removeClippedSubviews
         maxToRenderPerBatch={10}
         updateCellsBatchingPeriod={50}
         initialNumToRender={15}
         windowSize={8}
       />
-    </SafeAreaView>
+    </View>
   );
 };
 

@@ -6,7 +6,6 @@ import {
   Modal,
   StyleSheet,
   ScrollView,
-  FlatList,
 } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import type { MessageType } from '../../types/message.type';
@@ -98,22 +97,22 @@ export const ReactionsPicker: React.FC<ReactionPickerProps> = ({
 
           {/* Full emoji grid */}
           {showAll && (
-            <ScrollView style={styles.fullGrid} showsVerticalScrollIndicator={false}>
-              <FlatList
-                data={FULL_EMOJIS}
-                keyExtractor={(em, i) => `${em}-${i}`}
-                numColumns={8}
-                scrollEnabled={false}
-                columnWrapperStyle={styles.gridRow}
-                renderItem={({ item }) => (
+            <ScrollView
+              style={styles.fullGrid}
+              showsVerticalScrollIndicator={false}
+              nestedScrollEnabled
+            >
+              <View style={styles.emojiGrid}>
+                {FULL_EMOJIS.map((em, i) => (
                   <TouchableOpacity
+                    key={`${em}-${i}`}
                     style={styles.gridEmoji}
-                    onPress={() => handleReact(item)}
+                    onPress={() => handleReact(em)}
                   >
-                    <Text style={styles.emojiText}>{item}</Text>
+                    <Text style={styles.emojiText}>{em}</Text>
                   </TouchableOpacity>
-                )}
-              />
+                ))}
+              </View>
             </ScrollView>
           )}
 
@@ -179,9 +178,10 @@ const styles = StyleSheet.create({
     maxHeight: 220,
     marginBottom: 12,
   },
-  gridRow: {
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-around',
-    marginBottom: 4,
   },
   gridEmoji: {
     width: 38,

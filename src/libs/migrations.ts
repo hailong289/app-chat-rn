@@ -3,7 +3,7 @@ import { Rooms } from '../models/rooms.model';
 import { Messages } from '../models/messages.model';
 
 export const DB_NAME = 'AppChatRN.db';
-export const CURRENT_VERSION = 2;
+export const CURRENT_VERSION = 5;
 
 export const MIGRATIONS: Record<number, (db: NitroSQLiteConnection) => Promise<void>> = {
   1: async (db) => {
@@ -26,6 +26,20 @@ export const MIGRATIONS: Record<number, (db: NitroSQLiteConnection) => Promise<v
     await db.executeAsync(roomsModel.createIndex().trim());
     await db.executeAsync(messagesModel.createIndex().trim());
     console.log('✅ Đã tối ưu indexes cho rooms và messages');
+  },
+  5: async (db) => {
+    const cols: [string, string][] = [
+      ['hiddenBy', 'TEXT'],
+      ['hiddenByMe', 'INTEGER DEFAULT 0'],
+      ['hiddenAt', 'TEXT'],
+      ['call_history', 'TEXT'],
+    ];
+    for (const [col, def] of cols) {
+      try { await db.executeAsync(`ALTER TABLE messages ADD COLUMN ${col} ${def}`); } catch (_) {
+        console.log(`Cột ${col} đã tồn tại hoặc không thể thêm`);
+      }
+    }
+    console.log('✅ Đã thêm các cột thiếu vào bảng messages');
   },
   100: async (db) => { // reset và tạo lại các bảng
     const roomsModel = new Rooms();

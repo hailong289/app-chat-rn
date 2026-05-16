@@ -8,8 +8,13 @@ import AddContactPage from '../pages/add-contact.page';
 import CallPage from '../pages/call.page';
 import DocumentListPage from '../pages/docs/document-list';
 import DocumentEditorPage from '../pages/docs/document-editor';
+import TodoListPage from '../pages/todo/todo-list';
+import DeckListPage from '../pages/flashcard/deck-list';
 import HeaderSearchComponent from '../components/headers/headers-search.component';
 import HeaderChatComponent from '../components/headers/headers-chat.component';
+import HeaderComponent from '../components/headers/headers.component';
+import { AppMenuProvider } from '../providers/app-menu.provider';
+import type { CallMember } from '../types/call.state';
 
 export type MainStackParamList = {
     Main: NavigatorScreenParams<MainTabParamList> | undefined;
@@ -20,7 +25,8 @@ export type MainStackParamList = {
     AddContact: undefined;
     Call: {
         roomId: string;
-        members: string;
+        /** In-app navigation passes `CallMember[]`; legacy/web may pass encrypted string. */
+        members: CallMember[] | string;
         callType: 'audio' | 'video';
         callMode: 'p2p' | 'sfu';
         status: string;
@@ -31,6 +37,8 @@ export type MainStackParamList = {
     DocumentEditor: {
         docId: string;
     };
+    TodoList: { projectId?: string } | undefined;
+    DeckList: undefined;
 };
 
 const MainStack = createStackNavigator<MainStackParamList>();
@@ -38,6 +46,7 @@ const MainStack = createStackNavigator<MainStackParamList>();
 const MainStackNavigator = () => {
 
     return (
+        <AppMenuProvider>
         <MainStack.Navigator screenOptions={{ headerShown: false }}>
             <MainStack.Screen name="Main" component={MainNavigator} />
             <MainStack.Screen 
@@ -88,18 +97,29 @@ const MainStackNavigator = () => {
                 name="DocumentList"
                 component={DocumentListPage}
                 options={{
-                    headerShown: false,
+                    headerShown: true,
                 }}
             />
             <MainStack.Screen
                 name="DocumentEditor"
                 component={DocumentEditorPage}
                 options={{
-                    headerShown: false,
+                    headerShown: true,
                     gestureEnabled: true,
                 }}
             />
+            <MainStack.Screen
+                name="TodoList"
+                component={TodoListPage}
+                options={{ headerShown: true }}
+            />
+            <MainStack.Screen
+                name="DeckList"
+                component={DeckListPage}
+                options={{ headerShown: true }}
+            />
         </MainStack.Navigator>
+        </AppMenuProvider>
     );
 };
 

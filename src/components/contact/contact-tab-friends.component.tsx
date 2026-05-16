@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Text, TouchableOpacity, ActivityIndicator, ScrollView, RefreshControl } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MAIN_TAB_BAR_HEIGHT } from '@/src/libs/resolve-media-url';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Box } from '@/src/components/ui/box';
 import { HStack } from '@/src/components/ui/hstack';
@@ -14,6 +16,8 @@ interface ContactTabFriendsProps {
 }
 
 export const ContactTabFriends: React.FC<ContactTabFriendsProps> = ({ searchQuery }) => {
+  const insets = useSafeAreaInsets();
+  const scrollBottomPad = MAIN_TAB_BAR_HEIGHT + insets.bottom + 24;
   const { getFriends, loading: { friends: isLoadingFriends }, friends } = useContactStore();
   const [page, setPage] = useState(1);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,6 +66,8 @@ export const ContactTabFriends: React.FC<ContactTabFriendsProps> = ({ searchQuer
 
   return (
     <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: scrollBottomPad }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }

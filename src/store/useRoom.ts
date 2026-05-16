@@ -59,9 +59,13 @@ const useRoomStore = create<RoomState>()(
                 });
                 
                 const responseData = response.data as ApiResponse<PayloadGetRoomsSuccess | Room[]>;
-                const metadata = responseData?.metadata as Room[] || [];
+                const metadata = (responseData?.metadata as Room[] | undefined) || [];
+                const normalizedRooms = metadata.map((room: Room & { _mongoId?: string }) => ({
+                    ...room,
+                    _id: room._id ?? room._mongoId,
+                }));
                 set({
-                    rooms: metadata as Room[],
+                    rooms: normalizedRooms as Room[],
                     isLoading: false,
                 });
                 // Sync to SQLite (fire-and-forget)
@@ -154,10 +158,15 @@ const useRoomStore = create<RoomState>()(
                 const response = await RoomService.getRoomDetail(roomId);
                 const room = response.data?.metadata as Room;
                 if (room) {
-                    set({ room });
+                    const normalized = {
+                        ...room,
+                        _id: (room as Room & { _mongoId?: string })._id ?? (room as Room & { _mongoId?: string })._mongoId,
+                    };
+                    set({ room: normalized });
                     try {
-                        await Rooms.upsert(room);
+                        await Rooms.upsert(normalized);
                     } catch {}
+                    return normalized;
                 }
                 return room;
             } catch (error) {

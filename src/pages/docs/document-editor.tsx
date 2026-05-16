@@ -1,291 +1,249 @@
 /**
- * DocumentEditorPage — full-screen collaborative document editor.
- *
- * Uses a WebView to load the web-based BlockNote editor. Manages document
- * metadata (title, sharing, visibility) on the native side.
+ * DocumentEditorPage — metadata native + editor WebView (app-chat-fe /docs/[id]).
  */
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   Alert,
   ActivityIndicator,
   StyleSheet,
-  Modal,
-  KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import BlockNoteEditor from "../../components/docs/blocknote-editor";
 import ShareModal from "../../components/docs/share-document";
-import { DocumentSocketProvider } from "../../libs/DocumentSocketProvider";
 import useDocumentStore from "../../store/useDocumentStore";
 import useAuthStore from "../../store/useAuth";
 import { Document } from "../../types/document.type";
-import { useSocket } from "../../providers/socket.provider";
+import {
+  canAccessDocument,
+  isDocumentOwner,
+} from "../../libs/document-access";
+import { getDocumentEditorWebUrl } from "../../libs/web-app-url";
+import HeaderComponent from "../../components/headers/headers.component";
+import FontAwesome from "@react-native-vector-icons/fontawesome";
+
+const EDITOR_READY_TIMEOUT_MS = 20000;
 
 export default function DocumentEditorPage() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const docId = route.params?.docId as string;
 
-  const { getDocument, deleteDocument, duplicateDocument, updateTitle } =
-    useDocumentStore();
+  const { getDocument, deleteDocument } = useDocumentStore();
+  const documents = useDocumentStore((s) => s.documents);
   const currentUser = useAuthStore((s) => s.user);
-  const { socket, status } = useSocket();
+  const accessToken = useAuthStore((s) => s.tokens?.accessToken) ?? "";
 
   const [document, setDocument] = useState<Document | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [titleInput, setTitleInput] = useState("");
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaError, setMetaError] = useState<string | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
+  const [editorError, setEditorError] = useState<string | null>(null);
 
-  const docSocketRef = useRef<DocumentSocketProvider | null>(null);
-  const titleInputRef = useRef<TextInput>(null);
+  const readyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const isOwner = document?.ownerId === currentUser?._id;
-  const userPermission = document?.sharedWith?.find(
-    (u) => u.userId === currentUser?._id
-  );
-  const canEdit = isOwner || userPermission?.role === "editor";
-  const hasAccess =
-    isOwner ||
-    !!userPermission ||
-    document?.visibility === "public" ||
-    document?.visibility === "shared";
+  const isOwner = document ? isDocumentOwner(document, currentUser) : false;
+  const hasAccess = document ? canAccessDocument(document, currentUser) : false;
 
-  // Load document metadata
+  const clearReadyTimeout = useCallback(() => {
+    if (readyTimeoutRef.current) {
+      clearTimeout(readyTimeoutRef.current);
+      readyTimeoutRef.current = null;
+    }
+  }, []);
+
+  const markEditorReady = useCallback(() => {
+    clearReadyTimeout();
+    setEditorError(null);
+    setEditorReady(true);
+  }, [clearReadyTimeout]);
+
+  useEffect(() => {
+    setEditorReady(false);
+    setEditorError(null);
+    clearReadyTimeout();
+
+    readyTimeoutRef.current = setTimeout(() => {
+      setEditorError(
+        "Không kết nối được trình soạn thảo. Kiểm tra app-chat-fe (npm run dev) và WEB_APP_URL.",
+      );
+    }, EDITOR_READY_TIMEOUT_MS);
+
+    return clearReadyTimeout;
+  }, [docId, clearReadyTimeout]);
+
   useEffect(() => {
     if (!docId) return;
-    setLoading(true);
-    setError(null);
+
+    const fromCache = documents.find((d) => d._id === docId) ?? null;
+    setDocument(fromCache);
+    setMetaLoading(!fromCache);
+    setMetaError(null);
+
+    let cancelled = false;
 
     getDocument(docId)
       .then((doc) => {
+        if (cancelled) return;
         if (doc) {
           setDocument(doc);
-          setTitleInput(doc.title);
-        } else {
-          setError("Document not found");
+        } else if (!fromCache) {
+          setMetaError("Không tìm thấy tài liệu");
         }
       })
       .catch((err) => {
         console.error("Failed to load document:", err);
-        setError("Failed to load document");
+        if (!cancelled && !fromCache) {
+          setMetaError("Không tải được tài liệu");
+        }
       })
-      .finally(() => setLoading(false));
-  }, [docId, getDocument]);
-
-  // Setup document socket for presence/metadata
-  useEffect(() => {
-    if (!socket || !docId || status !== "connected" || !currentUser) return;
-
-    const provider = new DocumentSocketProvider(docId, socket);
-    provider.onDocumentUpdate = (data) => {
-      if (data) {
-        setDocument((prev) => (prev ? { ...prev, ...data } : data));
-        if (data.title) setTitleInput(data.title);
-      }
-    };
-    docSocketRef.current = provider;
+      .finally(() => {
+        if (!cancelled) setMetaLoading(false);
+      });
 
     return () => {
-      provider.destroy();
-      docSocketRef.current = null;
+      cancelled = true;
     };
-  }, [socket, docId, status, currentUser]);
+  }, [docId, documents]);
 
-  // Header config
-  useEffect(() => {
+  useLayoutEffect(() => {
     navigation.setOptions({
-      headerShown: false,
+      headerShown: true,
+      header: () => (
+        <HeaderComponent
+          title={document?.title || "Tài liệu"}
+          leftIcon="arrow-left"
+          onLeftPress={() => navigation.goBack()}
+          rightComponent={
+            document ? (
+              <TouchableOpacity
+                onPress={() => setShowShare(true)}
+                hitSlop={8}
+                style={styles.headerIconBtn}
+              >
+                <FontAwesome name="share-alt" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            ) : undefined
+          }
+        />
+      ),
     });
-  }, [navigation]);
-
-  const handleTitleSave = async () => {
-    if (!isOwner) return;
-    const trimmed = titleInput.trim();
-    if (!trimmed || trimmed === document?.title) {
-      setIsEditingTitle(false);
-      setTitleInput(document?.title || "");
-      return;
-    }
-    try {
-      const updated = await updateTitle(docId, trimmed);
-      if (updated) {
-        setDocument((prev) => (prev ? { ...prev, title: updated.title } : null));
-      }
-    } catch (err) {
-      console.error("Failed to rename:", err);
-      setTitleInput(document?.title || "");
-    } finally {
-      setIsEditingTitle(false);
-    }
-  };
+  }, [navigation, document?.title, document]);
 
   const handleDelete = () => {
+    if (!document) return;
     Alert.alert(
-      "Delete Document",
-      `Delete "${document?.title}"? This cannot be undone.`,
+      "Xóa tài liệu",
+      `Xóa "${document.title}"? Hành động này không thể hoàn tác.`,
       [
-        { text: "Cancel", style: "cancel" },
+        { text: "Hủy", style: "cancel" },
         {
-          text: "Delete",
+          text: "Xóa",
           style: "destructive",
           onPress: async () => {
             await deleteDocument(docId);
             navigation.goBack();
           },
         },
-      ]
+      ],
     );
   };
 
-  const handleDuplicate = async () => {
-    const newDoc = await duplicateDocument(docId);
-    if (newDoc) {
-      Alert.alert("Copied", `"${newDoc.title}" created.`, [
-        {
-          text: "Open",
-          onPress: () =>
-            navigation.replace("DocumentEditor", { docId: newDoc._id }),
-        },
-        { text: "OK" },
-      ]);
-    }
-  };
-
-  // Loading state
-  if (loading) {
+  if (metaLoading && !document) {
     return (
-      <View style={styles.center}>
+      <SafeAreaView style={styles.center} edges={["bottom"]}>
         <ActivityIndicator size="large" color="#42A59F" />
-        <Text style={styles.loadingText}>Loading document...</Text>
-      </View>
+        <Text style={styles.loadingText}>Đang tải tài liệu...</Text>
+      </SafeAreaView>
     );
   }
 
-  // Error state
-  if (error || !document) {
+  if (metaError || !document) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorTitle}>
-          {error || "Document not found"}
-        </Text>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backBtnText}>Go Back</Text>
+      <SafeAreaView style={styles.center} edges={["bottom"]}>
+        <Text style={styles.errorTitle}>{metaError || "Không tìm thấy tài liệu"}</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.backBtnText}>Quay lại</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
 
-  // Access denied
-  if (!hasAccess) {
+  if (document && !hasAccess) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorTitle}>Access Denied</Text>
-        <Text style={styles.errorSubtitle}>
-          You don't have permission to view this document.
-        </Text>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backBtnText}>Back to Documents</Text>
+      <SafeAreaView style={styles.center} edges={["bottom"]}>
+        <Text style={styles.errorTitle}>Không có quyền truy cập</Text>
+        <Text style={styles.errorSubtitle}>Bạn không có quyền xem tài liệu này.</Text>
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Text style={styles.backBtnText}>Quay lại</Text>
         </TouchableOpacity>
-      </View>
+      </SafeAreaView>
     );
   }
+
+  if (!document) return null;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={0}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerBack}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.headerBackText}>← Back</Text>
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          {isEditingTitle ? (
-            <TextInput
-              ref={titleInputRef}
-              style={styles.titleInput}
-              value={titleInput}
-              onChangeText={setTitleInput}
-              onBlur={handleTitleSave}
-              onSubmitEditing={handleTitleSave}
-              autoFocus
-              selectTextOnFocus
-            />
-          ) : (
-            <TouchableOpacity
-              onPress={() => isOwner && setIsEditingTitle(true)}
-              disabled={!isOwner}
-            >
-              <Text style={styles.headerTitle} numberOfLines={1}>
-                {document.title}
-              </Text>
-            </TouchableOpacity>
-          )}
-          <Text style={styles.headerStatus}>
-            {editorReady ? "Saved" : "Loading..."}
-          </Text>
-        </View>
-
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.headerBtn}
-            onPress={() => setShowShare(true)}
-          >
-            <Text style={styles.headerBtnText}>
-              {isOwner ? "Share" : canEdit ? "Members" : "Viewer"}
-            </Text>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
+      <View style={styles.statusBar}>
+        <Text style={styles.statusText}>
+          {editorError
+            ? "Lỗi đồng bộ"
+            : editorReady
+              ? "Đã sẵn sàng"
+              : metaLoading
+                ? "Đang cập nhật..."
+                : "Đang mở trình soạn thảo..."}
+        </Text>
+        {isOwner && (
+          <TouchableOpacity onPress={handleDelete}>
+            <Text style={styles.deleteBtn}>Xóa</Text>
           </TouchableOpacity>
-          {isOwner && (
-            <TouchableOpacity onPress={handleDelete}>
-              <Text style={styles.deleteBtn}>Delete</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+        )}
       </View>
 
-      {/* Editor WebView */}
+      {editorError ? (
+        <View style={styles.editorErrorBox}>
+          <Text style={styles.editorErrorText}>{editorError}</Text>
+          <Text style={styles.editorErrorHint}>
+            Chạy app-chat-fe: npm run dev{"\n"}
+            {getDocumentEditorWebUrl(docId, accessToken)}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.editorContainer}>
+        {!editorReady && !editorError ? (
+          <View style={styles.editorLoadingOverlay}>
+            <ActivityIndicator size="large" color="#42A59F" />
+            <Text style={styles.loadingText}>Đang tải nội dung...</Text>
+          </View>
+        ) : null}
+
         <BlockNoteEditor
+          key={docId}
           docId={docId}
-          sharedWith={document.sharedWith}
-          editable={canEdit}
-          onEditorReady={() => setEditorReady(true)}
-          onTitleChange={(title) => {
-            setTitleInput(title);
-            setDocument((prev) => (prev ? { ...prev, title } : null));
+          onEditorReady={markEditorReady}
+          onLoadEnd={markEditorReady}
+          onError={(msg) => {
+            clearReadyTimeout();
+            setEditorReady(false);
+            setEditorError(msg);
           }}
         />
       </View>
 
-      {/* Share modal */}
-      {document && (
-        <ShareModal
-          visible={showShare}
-          onClose={() => setShowShare(false)}
-          document={document}
-        />
-      )}
-    </KeyboardAvoidingView>
+      <ShareModal
+        visible={showShare}
+        onClose={() => setShowShare(false)}
+        document={document}
+      />
+    </SafeAreaView>
   );
 }
 
@@ -311,6 +269,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
     marginBottom: 8,
+    textAlign: "center",
   },
   errorSubtitle: {
     fontSize: 14,
@@ -330,73 +289,55 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  // Header
-  header: {
+  headerIconBtn: {
+    padding: 4,
+  },
+  statusBar: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingTop: Platform.OS === "ios" ? 50 : 12,
-    paddingBottom: 10,
-    backgroundColor: "#ffffff",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: "#e5e7eb",
   },
-  headerBack: {
-    paddingRight: 10,
-  },
-  headerBackText: {
-    fontSize: 15,
-    color: "#42A59F",
-    fontWeight: "500",
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: "center",
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-    maxWidth: 200,
-  },
-  titleInput: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#111827",
-    borderBottomWidth: 1,
-    borderBottomColor: "#42A59F",
-    paddingVertical: 2,
-    minWidth: 150,
-    textAlign: "center",
-  },
-  headerStatus: {
-    fontSize: 11,
-    color: "#9ca3af",
-    marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  headerBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: "#e6f7f6",
-  },
-  headerBtnText: {
-    fontSize: 13,
-    color: "#42A59F",
-    fontWeight: "600",
+  statusText: {
+    fontSize: 12,
+    color: "#6b7280",
   },
   deleteBtn: {
     fontSize: 13,
     color: "#dc2626",
     fontWeight: "500",
   },
-  // Editor
   editorContainer: {
     flex: 1,
+    position: "relative",
+  },
+  editorLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(249,250,251,0.92)",
+  },
+  editorErrorBox: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: "#fef2f2",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#fecaca",
+  },
+  editorErrorText: {
+    fontSize: 13,
+    color: "#b91c1c",
+    fontWeight: "600",
+  },
+  editorErrorHint: {
+    fontSize: 11,
+    color: "#6b7280",
+    marginTop: 4,
+    lineHeight: 16,
   },
 });

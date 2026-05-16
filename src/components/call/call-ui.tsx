@@ -1,34 +1,51 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   SafeAreaView,
   Dimensions,
-  FlatList,
   Platform,
+  ScrollView,
 } from 'react-native';
 import FastImage from 'react-native-fast-image';
+import FontAwesome from '@react-native-vector-icons/fontawesome';
 import useCallStore from '../../store/useCallStore';
-import { CallMember } from '../../types/call.state';
+import useAuthStore from '../../store/useAuth';
 import { useSocket } from '../../providers/socket.provider';
 import { DeviceSelectorModal } from './device-selector';
+import { useNavigation } from '@react-navigation/native';
+import type { StackNavigationProp } from '@react-navigation/stack';
+import type { MainStackParamList } from '../../navigations/MainStackNavigator';
 import { PipView } from './pip-view';
+import type { CallMember } from '../../types/call.state';
+import {
+  getCallHeaderTitle,
+  getGridColumns,
+  getInRoomMembers,
+  getMemberFromStreamKey,
+  getOtherParticipant,
+} from '../../libs/call-ui-helpers';
 
 let RTCView: any = null;
 try {
   RTCView = require('react-native-webrtc').RTCView;
 } catch {}
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const { width: SCREEN_W } = Dimensions.get('window');
+const CTRL_SIZE = 56;
+const PRIMARY = '#42A59F';
 
 interface CallUIProps {
-  onEndCall: () => void;
   isBackground?: boolean;
 }
 
-export default function CallUI({ onEndCall, isBackground = false }: CallUIProps) {
+export default function CallUI({ isBackground = false }: CallUIProps) {
+  const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
+  const currentUserId = useAuthStore((s) => s.user?.id ?? '');
+
   const {
     status,
     mode,
@@ -36,27 +53,37 @@ export default function CallUI({ onEndCall, isBackground = false }: CallUIProps)
     members,
     action,
     stream,
-    peersSharingScreen,
     roomId,
     callId,
     actionToggleTrack,
     setUserIdGhimmed,
-    setScreenSharerIdGhimmed,
     endCall,
     handleCreateLocalStream,
-    updateCallState,
     socket,
   } = useCallStore();
 
-  const { socket: providerSocket } = useSocket();
+  const { socket: providerSocket } = useSocket('/call');
   const [deviceSelectorOpen, setDeviceSelectorOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [cameraOffPeers, setCameraOffPeers] = useState<Set<string>>(new Set());
   const [micOffPeers, setMicOffPeers] = useState<Set<string>>(new Set());
   const startedRef = useRef(false);
 
-  const myId = members.find((m) => m.is_caller)?.id ?? '';
+  const remoteEntries = useMemo(
+    () => Array.from(stream.remoteStreams.entries()),
+    [stream.remoteStreams],
+  );
 
-  // Initialize local stream + update socket in store
+  const headerTitle = useMemo(
+    () => getCallHeaderTitle(members, currentUserId, status),
+    [members, currentUserId, status],
+  );
+
+  const waitingPeer = useMemo(
+    () => getOtherParticipant(members, currentUserId),
+    [members, currentUserId],
+  );
+
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
@@ -69,7 +96,6 @@ export default function CallUI({ onEndCall, isBackground = false }: CallUIProps)
     void handleCreateLocalStream();
   }, [handleCreateLocalStream, socket, providerSocket]);
 
-  // Register call socket events
   useEffect(() => {
     const s = socket ?? providerSocket;
     if (!s) return;
@@ -90,12 +116,10 @@ export default function CallUI({ onEndCall, isBackground = false }: CallUIProps)
       s.on(ev, handlers[ev]);
     }
 
-    // SFU signal
     s.on('signal', (payload: any) => {
       void useCallStore.getState().handleSFUSignal(payload);
     });
 
-    // Camera / mic state events for UI
     s.on('call:camera-state', ({ actionUserId, isCameraOn }: any) => {
       setCameraOffPeers((prev) => {
         const next = new Set(prev);
@@ -120,14 +144,14 @@ export default function CallUI({ onEndCall, isBackground = false }: CallUIProps)
   }, [socket, providerSocket]);
 
   const handleEndCall = useCallback(async () => {
+    setMoreMenuOpen(false);
     await endCall({
       roomId,
-      actionUserId: myId,
+      actionUserId: currentUserId,
       status: 'ended',
       callId,
     });
-    onEndCall();
-  }, [endCall, roomId, myId, callId, onEndCall]);
+  }, [endCall, roomId, currentUserId, callId]);
 
   const formatDuration = (seconds: number) => {
     const m = Math.floor(seconds / 60);
@@ -135,43 +159,20 @@ export default function CallUI({ onEndCall, isBackground = false }: CallUIProps)
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Main video: pinned camera > pinned screen > local screen > first peer screen > first peer camera > local
-  const mainStream = (() => {
-    const { userIdGhimmed, screenSharerIdGhimmed } = action;
+  const getMemberFromKey = useCallback(
+    (key: string) => (roomId ? getMemberFromStreamKey(roomId, members, key) : null),
+    [roomId, members],
+  );
 
-    if (userIdGhimmed) {
-      if (userIdGhimmed === myId) return stream.localStream;
-      return stream.remoteStreams.get(`${roomId}-${userIdGhimmed}`) ?? null;
-    }
+  const pinnedKey = action.userIdGhimmed
+    ? `${roomId}-${action.userIdGhimmed}`
+    : remoteEntries.length === 1
+      ? remoteEntries[0][0]
+      : null;
 
-    if (screenSharerIdGhimmed) {
-      if (screenSharerIdGhimmed === myId) return stream.localScreenStream;
-      return stream.remoteScreenStreams.get(`${roomId}-${screenSharerIdGhimmed}`) ?? null;
-    }
-
-    if (action.isSharingScreen && stream.localScreenStream) return stream.localScreenStream;
-
-    const firstScreenSharer = [...peersSharingScreen].find((id) => id !== myId);
-    if (firstScreenSharer) {
-      return stream.remoteScreenStreams.get(`${roomId}-${firstScreenSharer}`) ?? null;
-    }
-
-    // First remote camera
-    for (const [, s] of stream.remoteStreams) {
-      if (s) return s;
-    }
-
-    return stream.localStream;
-  })();
-
-  // Mini strip: all participants except the one in main view
-  const stripMembers = members.filter((m) => {
-    const inMain =
-      action.userIdGhimmed === m.id ||
-      (action.screenSharerIdGhimmed === m.id) ||
-      (!action.userIdGhimmed && !action.screenSharerIdGhimmed);
-    return true; // show all in strip; main view shows the selected one
-  });
+  const showGrid = remoteEntries.length > 1 && !action.userIdGhimmed;
+  const cols = getGridColumns(remoteEntries.length);
+  const tileW = (SCREEN_W - 16) / cols - 4;
 
   if (status === 'idle' || status === 'ended') return null;
 
@@ -180,166 +181,180 @@ export default function CallUI({ onEndCall, isBackground = false }: CallUIProps)
       <PipView
         localStream={stream.localStream}
         isMicEnabled={action.isMicEnabled}
-        onTap={onEndCall}
+        onTap={() =>
+          navigation.navigate('Call', {
+            roomId,
+            members,
+            callType: mode,
+            callMode,
+            callId: callId ?? undefined,
+            isCaller: members.some((m) => m.id === currentUserId && m.is_caller),
+          })
+        }
       />
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Status bar */}
-      <View style={styles.topBar}>
-        <Text style={styles.statusText}>
-          {status === 'calling' ? 'Đang gọi...' :
-           status === 'accepted' ? formatDuration(action.duration) :
-           status === 'incoming' ? 'Đang đến...' : status}
-        </Text>
-        <Text style={styles.modeText}>
-          {callMode === 'sfu' ? 'Nhóm' : 'P2P'} · {mode === 'video' ? 'Video' : 'Thoại'}
-        </Text>
+      {/* Header overlay — matches web call page */}
+      <View style={styles.headerOverlay} pointerEvents="none">
+        <Text style={styles.headerTitle}>{headerTitle}</Text>
+        {status === 'accepted' && (
+          <Text style={styles.headerDuration}>{formatDuration(action.duration)}</Text>
+        )}
       </View>
 
-      {/* Main video area */}
+      {/* Video / waiting area */}
       <View style={styles.mainView}>
-        {mode === 'video' && mainStream && RTCView ? (
-          <RTCView
-            streamURL={mainStream.toURL?.() ?? mainStream.id}
-            style={styles.mainVideo}
-            objectFit="cover"
-            mirror={mainStream === stream.localStream}
-          />
-        ) : (
-          <View style={styles.audioCallScreen}>
-            <View style={styles.audioAvatarRing}>
-              {members.length > 0 && (
-                <FastImage
-                  style={styles.audioAvatar}
-                  source={
-                    members[0].avatar
-                      ? { uri: members[0].avatar }
-                      : require('../../assets/images/user-avatar.png')
+        {remoteEntries.length > 0 ? (
+          showGrid ? (
+            <ScrollView contentContainerStyle={styles.gridWrap}>
+              {remoteEntries.map(([key, remoteStream]) => (
+                <ParticipantTile
+                  key={key}
+                  streamKey={key}
+                  stream={remoteStream}
+                  member={getMemberFromKey(key)}
+                  width={tileW}
+                  isPinned={false}
+                  isCameraOff={isPeerCameraOff(key, getMemberFromKey(key), cameraOffPeers)}
+                  isMicOff={!!getMemberFromKey(key)?.id && micOffPeers.has(getMemberFromKey(key)!.id)}
+                  onPress={() => setUserIdGhimmed(getMemberFromKey(key)?.id ?? '')}
+                />
+              ))}
+            </ScrollView>
+          ) : (
+            (() => {
+              const key = pinnedKey ?? remoteEntries[0]?.[0];
+              const remoteStream = key ? stream.remoteStreams.get(key) : null;
+              const member = key ? getMemberFromKey(key) : null;
+              if (!remoteStream || !key) {
+                return (
+                  <WaitingView
+                    peer={waitingPeer}
+                    members={members}
+                    message="Đang kết nối…"
+                  />
+                );
+              }
+              return (
+                <ParticipantTile
+                  streamKey={key}
+                  stream={remoteStream}
+                  member={member}
+                  fullScreen
+                  isPinned
+                  isCameraOff={isPeerCameraOff(key, member, cameraOffPeers)}
+                  isMicOff={!!member?.id && micOffPeers.has(member.id)}
+                  onPress={() =>
+                    setUserIdGhimmed(action.userIdGhimmed ? '' : member?.id ?? '')
                   }
                 />
-              )}
-            </View>
-            <Text style={styles.audioCallerName}>
-              {members.map((m) => m.fullname).join(', ')}
-            </Text>
-          </View>
+              );
+            })()
+          )
+        ) : status === 'accepted' ? (
+          <WaitingView
+            peer={waitingPeer}
+            members={members}
+            message="Đang chờ người khác tham gia…"
+          />
+        ) : (
+          <WaitingView
+            peer={waitingPeer}
+            members={members}
+          />
         )}
 
-        {/* Local pip (small, when not main) */}
-        {mode === 'video' && stream.localStream && mainStream !== stream.localStream && RTCView && (
-          <TouchableOpacity
-            style={styles.localPip}
-            onPress={() => setUserIdGhimmed(myId)}
-          >
-            <RTCView
-              streamURL={stream.localStream.toURL?.() ?? stream.localStream.id}
-              style={StyleSheet.absoluteFill}
-              objectFit="cover"
-              mirror
-            />
-            {!action.isCameraEnabled && (
-              <View style={styles.cameraOffOverlay}>
-                <Text style={styles.cameraOffIcon}>📵</Text>
+        {/* Local camera PiP */}
+        {mode === 'video' &&
+          stream.localStream &&
+          action.userIdGhimmed !== currentUserId &&
+          RTCView && (
+            <TouchableOpacity
+              style={styles.localPip}
+              onPress={() => setUserIdGhimmed(currentUserId)}
+              activeOpacity={0.9}
+            >
+              <RTCView
+                streamURL={stream.localStream.toURL?.() ?? stream.localStream.id}
+                style={StyleSheet.absoluteFill}
+                objectFit="cover"
+                mirror
+              />
+              <View style={styles.pipLabel}>
+                <Text style={styles.pipLabelText}>Bạn</Text>
               </View>
-            )}
-          </TouchableOpacity>
-        )}
+              {!action.isCameraEnabled && (
+                <View style={styles.cameraOffOverlay}>
+                  <FontAwesome name="video-camera" size={20} color="#fff" />
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
       </View>
 
-      {/* Participant strip (SFU / group calls) */}
-      {callMode === 'sfu' && members.length > 2 && (
-        <FlatList
-          horizontal
-          data={stripMembers}
-          keyExtractor={(m) => m.id}
-          style={styles.strip}
-          contentContainerStyle={{ paddingHorizontal: 8 }}
-          renderItem={({ item: m }) => {
-            const remoteStream = stream.remoteStreams.get(`${roomId}-${m.id}`);
-            const isCamOff = cameraOffPeers.has(m.id) || !remoteStream;
-            const isMicOff = micOffPeers.has(m.id);
-            return (
-              <TouchableOpacity
-                style={styles.stripTile}
-                onPress={() => setUserIdGhimmed(m.id)}
-              >
-                {!isCamOff && remoteStream && RTCView ? (
-                  <RTCView
-                    streamURL={remoteStream.toURL?.() ?? remoteStream.id}
-                    style={StyleSheet.absoluteFill}
-                    objectFit="cover"
-                  />
-                ) : (
-                  <View style={styles.stripAvatarBg}>
-                    <FastImage
-                      style={styles.stripAvatar}
-                      source={
-                        m.avatar
-                          ? { uri: m.avatar }
-                          : require('../../assets/images/user-avatar.png')
-                      }
-                    />
-                  </View>
-                )}
-                {isMicOff && (
-                  <View style={styles.micOffBadge}>
-                    <Text style={{ fontSize: 9 }}>🔇</Text>
-                  </View>
-                )}
-                <Text style={styles.stripName} numberOfLines={1}>{m.fullname}</Text>
-              </TouchableOpacity>
-            );
-          }}
+      {/* Controls: 4 nút — mic, cam, cúp máy, thêm (dropdown lên) */}
+      {moreMenuOpen && (
+        <Pressable
+          style={styles.menuBackdrop}
+          onPress={() => setMoreMenuOpen(false)}
         />
       )}
-
-      {/* Controls */}
       <View style={styles.controls}>
-        {/* Mic */}
-        <ControlButton
-          icon={action.isMicEnabled ? '🎤' : '🔇'}
-          label={action.isMicEnabled ? 'Tắt mic' : 'Bật mic'}
-          active={!action.isMicEnabled}
+        <CallControlButton
+          icon="microphone"
+          active={action.isMicEnabled}
+          highlightWhenActive
           onPress={() => actionToggleTrack('mic', !action.isMicEnabled)}
         />
-
-        {/* Camera */}
-        <ControlButton
-          icon={action.isCameraEnabled ? '📷' : '📵'}
-          label={action.isCameraEnabled ? 'Tắt cam' : 'Bật cam'}
-          active={!action.isCameraEnabled}
+        <CallControlButton
+          icon="video-camera"
+          iconSlash={!action.isCameraEnabled}
+          active={action.isCameraEnabled}
+          highlightWhenActive
           onPress={() => actionToggleTrack('video', !action.isCameraEnabled)}
         />
-
-        {/* Speaker */}
-        <ControlButton
-          icon={action.isSpeakerphoneEnabled ? '🔊' : '🔈'}
-          label={action.isSpeakerphoneEnabled ? 'Loa' : 'Loa tai'}
-          onPress={() => actionToggleTrack('speaker', !action.isSpeakerphoneEnabled)}
-        />
-
-        {/* Screen share */}
-        <ControlButton
-          icon="📲"
-          label={action.isSharingScreen ? 'Dừng share' : 'Chia sẻ'}
-          active={action.isSharingScreen}
-          onPress={() => actionToggleTrack('shareScreen', !action.isSharingScreen)}
-        />
-
-        {/* Device selector */}
-        <ControlButton
-          icon="⚙️"
-          label="Thiết bị"
-          onPress={() => setDeviceSelectorOpen(true)}
-        />
-
-        {/* End call */}
-        <TouchableOpacity style={styles.endBtn} onPress={handleEndCall}>
-          <Text style={styles.endIcon}>📵</Text>
-        </TouchableOpacity>
+        <CallControlButton icon="phone" danger onPress={handleEndCall} />
+        <View style={styles.moreWrap}>
+          {moreMenuOpen && (
+            <View style={styles.moreMenu}>
+              <MoreMenuItem
+                icon={action.isSpeakerphoneEnabled ? 'volume-up' : 'volume-off'}
+                label={action.isSpeakerphoneEnabled ? 'Loa ngoài' : 'Loa trong'}
+                active={action.isSpeakerphoneEnabled}
+                onPress={() => {
+                  void actionToggleTrack('speaker', !action.isSpeakerphoneEnabled);
+                }}
+              />
+              {status === 'accepted' && (
+                <MoreMenuItem
+                  icon="desktop"
+                  label={action.isSharingScreen ? 'Dừng chia sẻ' : 'Chia sẻ màn hình'}
+                  active={action.isSharingScreen}
+                  onPress={() => {
+                    void actionToggleTrack('shareScreen', !action.isSharingScreen);
+                  }}
+                />
+              )}
+              <MoreMenuItem
+                icon="cog"
+                label="Thiết bị"
+                onPress={() => {
+                  setMoreMenuOpen(false);
+                  setDeviceSelectorOpen(true);
+                }}
+              />
+            </View>
+          )}
+          <CallControlButton
+            icon="ellipsis-h"
+            active={moreMenuOpen}
+            highlightWhenActive
+            onPress={() => setMoreMenuOpen((v) => !v)}
+          />
+        </View>
       </View>
 
       {deviceSelectorOpen && (
@@ -352,11 +367,118 @@ export default function CallUI({ onEndCall, isBackground = false }: CallUIProps)
   );
 }
 
-function ControlButton({
+function isPeerCameraOff(
+  key: string,
+  member: CallMember | null,
+  cameraOffPeers: Set<string>,
+): boolean {
+  return !!(member?.id && cameraOffPeers.has(member.id));
+}
+
+function WaitingView({
+  peer,
+  members,
+  message,
+}: {
+  peer: CallMember | null;
+  members: CallMember[];
+  message?: string;
+}) {
+  const inRoom = getInRoomMembers(members);
+  const count = inRoom.length > 0 ? inRoom.length : members.length;
+  const isGroup = count > 2;
+
+  return (
+    <View style={styles.waiting}>
+      <View style={styles.waitingAvatarRing}>
+        <FastImage
+          style={styles.waitingAvatar}
+          source={
+            !isGroup && peer?.avatar
+              ? { uri: peer.avatar }
+              : require('../../assets/images/user-avatar.png')
+          }
+        />
+      </View>
+      <Text style={styles.waitingName}>
+        {isGroup
+          ? `Bạn và ${count - 1} người khác`
+          : peer?.fullname ?? 'Người dùng'}
+      </Text>
+      {message ? <Text style={styles.waitingHint}>{message}</Text> : null}
+    </View>
+  );
+}
+
+function ParticipantTile({
+  streamKey,
+  stream,
+  member,
+  fullScreen,
+  width,
+  isCameraOff,
+  isMicOff,
+  onPress,
+}: {
+  streamKey: string;
+  stream: any;
+  member: CallMember | null;
+  fullScreen?: boolean;
+  width?: number;
+  isPinned?: boolean;
+  isCameraOff: boolean;
+  isMicOff: boolean;
+  onPress: () => void;
+}) {
+  const hasVideo = !isCameraOff && RTCView;
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.tile,
+        fullScreen && styles.tileFull,
+        width != null && { width, height: width * 0.75 },
+      ]}
+      onPress={onPress}
+      activeOpacity={0.95}
+    >
+      {hasVideo ? (
+        <RTCView
+          streamURL={stream.toURL?.() ?? stream.id}
+          style={StyleSheet.absoluteFill}
+          objectFit={fullScreen ? 'contain' : 'cover'}
+        />
+      ) : (
+        <View style={styles.tileAvatarWrap}>
+          <FastImage
+            style={fullScreen ? styles.tileAvatarLg : styles.tileAvatarMd}
+            source={
+              member?.avatar
+                ? { uri: member.avatar }
+                : require('../../assets/images/user-avatar.png')
+            }
+          />
+        </View>
+      )}
+      <View style={styles.tileNameBar}>
+        <Text style={styles.tileName} numberOfLines={1}>
+          {member?.fullname ?? 'Người dùng'}
+        </Text>
+      </View>
+      {isMicOff && (
+        <View style={styles.micOffBadge}>
+          <FontAwesome name="microphone-slash" size={12} color="#fff" />
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+function MoreMenuItem({
   icon,
   label,
   onPress,
-  active = false,
+  active,
 }: {
   icon: string;
   label: string;
@@ -364,11 +486,57 @@ function ControlButton({
   active?: boolean;
 }) {
   return (
-    <TouchableOpacity style={styles.ctrlBtn} onPress={onPress}>
-      <View style={[styles.ctrlIconWrap, active && styles.ctrlIconActive]}>
-        <Text style={styles.ctrlIcon}>{icon}</Text>
+    <TouchableOpacity
+      style={styles.moreMenuItem}
+      onPress={onPress}
+      activeOpacity={0.85}
+    >
+      <View
+        style={[
+          styles.ctrlBtn,
+          active ? styles.ctrlBtnPrimary : styles.ctrlBtnMuted,
+        ]}
+      >
+        <FontAwesome name={icon as any} size={20} color="#fff" />
       </View>
-      <Text style={styles.ctrlLabel}>{label}</Text>
+      <Text style={styles.moreMenuLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function CallControlButton({
+  icon,
+  iconSlash,
+  onPress,
+  active,
+  highlightWhenActive,
+  danger,
+}: {
+  icon: string;
+  iconSlash?: boolean;
+  onPress: () => void;
+  active?: boolean;
+  highlightWhenActive?: boolean;
+  danger?: boolean;
+}) {
+  const highlighted = highlightWhenActive && (active ?? false);
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[
+        styles.ctrlBtn,
+        danger && styles.ctrlBtnDanger,
+        highlighted && styles.ctrlBtnPrimary,
+        !danger && !highlighted && styles.ctrlBtnMuted,
+      ]}
+      activeOpacity={0.8}
+    >
+      <FontAwesome
+        name={icon as any}
+        size={danger ? 26 : 22}
+        color="#fff"
+        style={iconSlash ? { opacity: 0.45 } : undefined}
+      />
     </TouchableOpacity>
   );
 }
@@ -376,154 +544,207 @@ function ControlButton({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0D0D1A',
+    backgroundColor: '#000',
   },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  headerOverlay: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 56 : 40,
+    left: 0,
+    right: 0,
+    zIndex: 10,
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 8,
   },
-  statusText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  modeText: {
-    color: '#AAB0BD',
-    fontSize: 13,
-  },
-  mainView: {
-    flex: 1,
-    position: 'relative',
-  },
-  mainVideo: {
-    flex: 1,
-    backgroundColor: '#1C1C2E',
-  },
-  audioCallScreen: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 16,
-  },
-  audioAvatarRing: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 3,
-    borderColor: '#42A59F',
-    overflow: 'hidden',
-  },
-  audioAvatar: {
-    width: '100%',
-    height: '100%',
-  },
-  audioCallerName: {
+  headerTitle: {
     color: '#fff',
     fontSize: 20,
     fontWeight: '600',
   },
-  localPip: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    width: 96,
-    height: 128,
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#42A59F',
-    backgroundColor: '#1C1C2E',
+  headerDuration: {
+    color: '#D1D5DB',
+    fontSize: 14,
+    marginTop: 4,
   },
-  cameraOffOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    alignItems: 'center',
+  mainView: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  gridWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 8,
+    gap: 4,
     justifyContent: 'center',
+    alignContent: 'center',
+    flexGrow: 1,
   },
-  cameraOffIcon: { fontSize: 28 },
-  strip: {
-    maxHeight: 104,
-    paddingVertical: 6,
-  },
-  stripTile: {
-    width: 72,
-    height: 92,
-    borderRadius: 10,
+  tile: {
+    borderRadius: 8,
     overflow: 'hidden',
-    marginHorizontal: 4,
     backgroundColor: '#1C1C2E',
+    position: 'relative',
   },
-  stripAvatarBg: {
+  tileFull: {
+    flex: 1,
+    width: '100%',
+    borderRadius: 0,
+  },
+  tileAvatarWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#111827',
+    minHeight: 200,
   },
-  stripAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  tileAvatarLg: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+  },
+  tileAvatarMd: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  tileNameBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  tileName: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   micOffBadge: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 8,
-    padding: 2,
+    top: 8,
+    right: 8,
+    backgroundColor: '#EF4444',
+    borderRadius: 12,
+    padding: 4,
   },
-  stripName: {
+  waiting: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 24,
+  },
+  waitingAvatarRing: {
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: PRIMARY,
+  },
+  waitingAvatar: {
+    width: '100%',
+    height: '100%',
+  },
+  waitingName: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  waitingHint: {
+    color: '#9CA3AF',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  localPip: {
+    position: 'absolute',
+    top: 100,
+    right: 12,
+    width: 100,
+    height: 136,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: PRIMARY,
+    backgroundColor: '#1C1C2E',
+  },
+  pipLabel: {
+    position: 'absolute',
+    left: 4,
+    right: 4,
+    bottom: 4,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 4,
+    paddingVertical: 2,
+  },
+  pipLabelText: {
     color: '#fff',
     fontSize: 10,
     textAlign: 'center',
-    paddingHorizontal: 2,
-    paddingBottom: 4,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  cameraOffOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 8,
   },
   controls: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 40 : 28,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    gap: 20,
+    paddingHorizontal: 24,
+    zIndex: 10,
+  },
+  moreWrap: {
+    position: 'relative',
     alignItems: 'center',
+  },
+  moreMenu: {
+    position: 'absolute',
+    bottom: CTRL_SIZE + 12,
+    right: 0,
+    alignItems: 'flex-end',
+    gap: 10,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    paddingVertical: 16,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
-    backgroundColor: '#12121E',
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+  },
+  moreMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  moreMenuLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    maxWidth: 160,
   },
   ctrlBtn: {
-    alignItems: 'center',
-    gap: 4,
-    minWidth: 48,
-  },
-  ctrlIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#2A2A3E',
+    width: CTRL_SIZE,
+    height: CTRL_SIZE,
+    borderRadius: CTRL_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctrlIconActive: {
-    backgroundColor: '#42A59F',
+  ctrlBtnPrimary: {
+    backgroundColor: PRIMARY,
   },
-  ctrlIcon: {
-    fontSize: 22,
+  ctrlBtnMuted: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
   },
-  ctrlLabel: {
-    color: '#AAB0BD',
-    fontSize: 10,
-  },
-  endBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  ctrlBtnDanger: {
     backgroundColor: '#EF4444',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  endIcon: {
-    fontSize: 26,
   },
 });

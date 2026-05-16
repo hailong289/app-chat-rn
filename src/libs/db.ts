@@ -1,8 +1,12 @@
-import { NitroSQLiteConnection, open } from "react-native-nitro-sqlite";
+import { NitroSQLiteConnection, open, NITRO_SQLITE_NULL } from "react-native-nitro-sqlite";
+import { enableSimpleNullHandling } from "react-native-nitro-sqlite";
 import { CURRENT_VERSION, DB_NAME, MIGRATIONS } from "./migrations";
 import Helpers from "./helpers";
 import { Rooms } from "../models/rooms.model";
 import { Messages } from "../models/messages.model";
+
+// Enable simple null handling to auto-convert null -> NITRO_SQLITE_NULL
+enableSimpleNullHandling();
 
 class DB {
     private static instance: DB;
@@ -26,7 +30,8 @@ class DB {
         offset: null as number | null,
         groupBy: [] as string[],
         values: [] as string[],
-        cast: {} as Record<string, string>
+        cast: {} as Record<string, string>,
+        fields: [] as string[]
     };
 
 
@@ -98,9 +103,9 @@ class DB {
             if (currentVersion < targetVersion) {
                 for (const [version, migration] of Object.entries(MIGRATIONS)) {
                     const versionNum = Number(version);
-                    if (versionNum > currentVersion) {
+                    if (versionNum > currentVersion && versionNum <= targetVersion) {
                         await migration(db);
-                        await db.executeAsync(`PRAGMA user_version = ${targetVersion}`);
+                        await db.executeAsync(`PRAGMA user_version = ${versionNum}`);
                     }
                 }
             } else {
@@ -136,7 +141,7 @@ class DB {
                 throw new Error('Database chưa khởi tạo');
             }
             console.warn('⚠️ Xóa và tạo lại database...');
-            await MIGRATIONS[100](this.db); 
+            await MIGRATIONS[100](this.db);
         } catch (error) {
             console.error('❌ Lỗi reset database:', error);
             throw error;
@@ -157,6 +162,11 @@ class DB {
 
     public setCast(values: Record<string, string>) {
         this.bindings.cast = values;
+        return this;
+    }
+
+    public setFields(fields: string[]) {
+        this.bindings.fields = fields;
         return this;
     }
 
@@ -241,6 +251,7 @@ class DB {
     }
 
     public async insert(data: Record<string, any>) {
+        data = this.filterData(data);
         const columns = Object.keys(data);
         const values = Object.values(data).map((value) => this.convertValue(value));
         this.bindings.column.push(...columns);
@@ -256,7 +267,8 @@ class DB {
     public async insertMany(dataArray: Record<string, any>[]) {
         if (dataArray.length === 0) return;
 
-        const columns = Object.keys(dataArray[0]);
+        const first = this.filterData(dataArray[0]);
+        const columns = Object.keys(first);
         const placeholders = columns.map(() => '?').join(',');
         const query = `INSERT OR REPLACE INTO ${this.bindings.table.name} (${columns.join(',')}) VALUES (${placeholders})`;
 
@@ -265,7 +277,8 @@ class DB {
         try {
             const results = [];
             for (const data of dataArray) {
-                const values = columns.map(col => this.convertValue(data[col]));
+                const filtered = this.filterData(data);
+                const values = columns.map(col => this.convertValue(filtered[col]));
                 const result = await this.db.executeAsync(query, values);
                 results.push(result);
             }
@@ -292,6 +305,7 @@ class DB {
     }
 
     public async update(data: Record<string, any>) {
+        data = this.filterData(data);
         const columns = Object.keys(data);
         const values = Object.values(data).map((value) => this.convertValue(value));
         this.bindings.column.push(...columns);
@@ -304,23 +318,21 @@ class DB {
     }
 
     public async upsert(data: Record<string, any>) {
-        const params = JSON.parse(JSON.stringify(data));
-        // Lưu table name trước khi clear
         const tableName = this.bindings.table.name;
         if (!tableName) {
             throw new Error('Table name is required for upsert operation');
         }
 
-        // Kiểm tra record có tồn tại không
+        let params = JSON.parse(JSON.stringify(data));
+        params = this.filterData(params);
+
         const result = await this.setTable(tableName).where('id', '=', params.id).exists();
 
-        // Set lại table name và where condition cho update
         if (result) {
             const id = params.id;
             delete params.id;
             return await this.setTable(tableName).where('id', '=', id).update(params);
         }
-        // Set lại table name cho insert
         return await this.setTable(tableName).insert(params);
     }
 
@@ -330,6 +342,17 @@ class DB {
         return await this.db.executeAsync(query, params);
     }
 
+    private filterData(data: Record<string, any>): Record<string, any> {
+        const allowedFields = this.bindings.fields;
+        if (!allowedFields || allowedFields.length === 0) return data;
+        const out: Record<string, any> = {};
+        for (const key of Object.keys(data)) {
+            if (allowedFields.includes(key)) {
+                out[key] = data[key];
+            }
+        }
+        return out;
+    }
 
     private getQuery(type: 'select' | 'insert' | 'update' | 'delete' | 'upsert'): string {
         const { table, column, where, orderBy, limit, offset, groupBy, values } = this.bindings;
@@ -429,7 +452,7 @@ class DB {
 
     private convertValue(value: any) {
         if (value === null || value === undefined) {
-            return null;
+            return NITRO_SQLITE_NULL;
         }
         if (typeof value === 'string') {
             return value;
@@ -459,7 +482,7 @@ class DB {
             return value.toString() as string;
         }
         if (typeof value === 'undefined') {
-            return null;
+            return NITRO_SQLITE_NULL;
         }
         return value;
     }
@@ -504,7 +527,8 @@ class DB {
             offset: null,
             groupBy: [],
             values: [],
-            cast: {}
+            cast: {},
+            fields: []
         };
         return this;
     }

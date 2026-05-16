@@ -21,6 +21,8 @@ import { MessageContextMenu } from './message-context-menu';
 import { ReactionsPicker } from './reactions-picker';
 import { useSocket } from '@/src/providers/socket.provider';
 import useAuthStore from '@/src/store/useAuth';
+import useMessageStore from '@/src/store/useMessage';
+import { SystemMessageBubble } from './system-message-bubble';
 
 export type DateSeparatorItem = {
   kind: 'date';
@@ -65,6 +67,7 @@ type MessageBubbleProps = {
 const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => {
   const { socket } = useSocket();
   const { user } = useAuthStore();
+  const hiddenByMe = item.hiddenBy?.includes(user?._id || '') ?? false;
 
   const attachments = (item.attachments ?? []) as Attachment[];
   const mediaAttachments = attachments.filter(
@@ -136,22 +139,44 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
 
   const handleReact = useCallback(
     (emoji: string) => {
-      socket?.emit('message:react', { messageId: item.id, emoji });
+      const { addReaction } = useMessageStore.getState();
+      const userId = user?._id || user?.id || '';
+      addReaction(item.roomId, item.id, emoji, userId);
+      socket?.emit('message:emoji', { messageId: item.id, roomId: item.roomId, emoji });
     },
-    [socket, item.id],
+    [socket, item.id, item.roomId, user],
   );
 
   const handleDelete = useCallback(() => {
+    const { deleteMessage } = useMessageStore.getState();
+    deleteMessage(item.roomId, item.id);
     socket?.emit('message:delete', { messageId: item.id, roomId: item.roomId });
   }, [socket, item.id, item.roomId]);
 
   const handleRecall = useCallback(() => {
+    const { recallMessage } = useMessageStore.getState();
+    recallMessage(item.roomId, item.id);
     socket?.emit('message:recall', { messageId: item.id, roomId: item.roomId });
   }, [socket, item.id, item.roomId]);
 
   const handlePin = useCallback(() => {
-    socket?.emit('message:pin', { messageId: item.id, roomId: item.roomId, pinned: !item.pinned });
+    const newPinned = !item.pinned;
+    const { togglePin } = useMessageStore.getState();
+    togglePin(item.roomId, item.id, newPinned);
+    socket?.emit('message:pinned', { messageId: item.id, roomId: item.roomId, pinned: newPinned });
   }, [socket, item.id, item.roomId, item.pinned]);
+
+  if (hiddenByMe) {
+    return (
+      <View className={`mb-4 ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
+        <View className="rounded-2xl px-4 py-2 bg-gray-100 border border-gray-200">
+          <Text className="text-sm italic text-gray-400">
+            {item.isMine ? 'Bạn đã xoá tin nhắn này' : 'Tin nhắn đã bị ẩn'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   if (item.isDeleted) {
     return (
@@ -166,13 +191,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
   }
 
   if (item.type === 'system') {
-    return (
-      <View className="items-center my-2">
-        <View className="bg-gray-100 rounded-full px-3 py-1">
-          <Text className="text-xs text-gray-500 text-center">{item.content}</Text>
-        </View>
-      </View>
-    );
+    return <SystemMessageBubble msg={item} />;
   }
 
   return (
@@ -309,7 +328,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
           )}
 
           {/* Pinned indicator */}
-          {item.pinned && (
+          {!hiddenByMe && !item.isDeleted && item.pinned && (
             <Text className="text-xs text-amber-500 ml-8 mt-0.5">📌 Ghim</Text>
           )}
 
@@ -364,6 +383,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
     prev.item.status === next.item.status &&
     prev.item.isDeleted === next.item.isDeleted &&
     prev.item.pinned === next.item.pinned &&
+    JSON.stringify(prev.item.hiddenBy) === JSON.stringify(next.item.hiddenBy) &&
     JSON.stringify(prev.item.reactions) === JSON.stringify(next.item.reactions) &&
     prev.onReply === next.onReply
   );

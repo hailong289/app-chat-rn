@@ -19,7 +19,9 @@ export class Rooms {
         "muted",
         "last_read_id",
         "pinned_messages",
-        "pinned_count"
+        "pinned_count",
+        "isBlocked",
+        "blockByMine"
     ];
 
     protected cast = {
@@ -38,7 +40,7 @@ export class Rooms {
      * Helper method để lấy query với tableName và cast đã được set
      */
     private q() {
-        return db.setTable(this.tableName).setCast(this.cast);
+        return db.setTable(this.tableName).setCast(this.cast).setFields(this.field);
     }
 
     getQuery() {

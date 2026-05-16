@@ -98,7 +98,7 @@ export interface AuthState {
     resetPassword: (payload: PayloadResetPassword) => Promise<void>;
     clearStorage: () => Promise<void>;
         // ── New methods added for Phase 1 completeness ──
-    fetchMe: () => Promise<void>;
+    fetchMe: () => Promise<import("./user.type").User | null>;
     refreshToken: () => Promise<string | null>;
     refreshAccessToken: () => Promise<string | null>;
     // checkRefreshing (function form) — for axios interceptor

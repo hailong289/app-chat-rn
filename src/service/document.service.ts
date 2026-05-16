@@ -4,22 +4,31 @@ import { Document, CreateDocumentDto } from "../types/document.type";
 class DocumentService {
   private readonly baseUrl = "/documents";
 
+  private unwrapMetadata<T>(response: { data?: T | { metadata?: T } }): T {
+    const body = response?.data as T | { metadata?: T } | undefined;
+    if (body && typeof body === "object" && "metadata" in body) {
+      return (body as { metadata?: T }).metadata as T;
+    }
+    return body as T;
+  }
+
   async getDocuments(roomId?: string): Promise<Document[]> {
-    const params: any = {};
+    const params: Record<string, string> = {};
     if (roomId) params.roomId = roomId;
 
     const response = await apiService.get<{ metadata: Document[] }>(
       this.baseUrl,
-      { params }
+      { params },
     );
-    return response.data.metadata || [];
+    const data = this.unwrapMetadata<Document[] | undefined>(response);
+    return Array.isArray(data) ? data : [];
   }
 
   async getDocument(docId: string): Promise<Document> {
     const response = await apiService.get<{ metadata: Document }>(
-      `${this.baseUrl}/${docId}`
+      `${this.baseUrl}/${docId}`,
     );
-    return response.data.metadata;
+    return this.unwrapMetadata<Document>(response);
   }
 
   async createDocument(data: CreateDocumentDto): Promise<Document> {

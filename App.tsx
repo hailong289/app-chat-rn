@@ -39,7 +39,7 @@ function App() {
         <SafeAreaProvider>
           <FirebaseProvider>
             <SQLiteProvider>
-              <SocketProvider>
+              <SocketProvider namespaces={["/chat", "/call"]}>
                 <SocketEventGlobal />
                 <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
                 <Suspense fallback={<Fallback />}>

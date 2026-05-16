@@ -18,6 +18,10 @@ export function setCallNavigationRef(ref: any) {
   _callNavigation = ref;
 }
 
+export function getCallNavigationRef() {
+  return _callNavigation;
+}
+
 // Mutex for camera upgrade — prevents concurrent getUserMedia calls.
 let _upgradeVideoInFlight: Promise<void> | null = null;
 
@@ -47,9 +51,13 @@ function _stopDurationTicker() {
   }
 }
 
+import { ensureWebRtcGlobals } from '../libs/webrtc-globals';
+import { navigateToCallScreen } from '../libs/safe-navigation';
+
 // RN: mediaDevices from react-native-webrtc
 function _getMediaDevices() {
   try {
+    ensureWebRtcGlobals();
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { mediaDevices } = require('react-native-webrtc');
     return mediaDevices;
@@ -154,9 +162,9 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         incomingCall: null,
       });
 
-      _callNavigation?.navigate('Call', {
+      navigateToCallScreen(_callNavigation, {
         roomId,
-        members: Helpers.enCryptUserInfo(memberMap),
+        members: memberMap,
         callType: mode,
         callMode,
         status: 'calling',
@@ -214,9 +222,9 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         incomingCall: null,
       });
 
-      _callNavigation?.navigate('Call', {
+      navigateToCallScreen(_callNavigation, {
         roomId: incoming.roomId,
-        members: Helpers.enCryptUserInfo(memberMap),
+        members: memberMap,
         callType: incoming.callType,
         callMode: incoming.callMode,
         status: 'joined',

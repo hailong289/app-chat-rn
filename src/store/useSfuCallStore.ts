@@ -3,6 +3,10 @@ import { SfuStoreState, SfuSessionState } from '../types/call-sfu.state';
 
 // Circular import is safe: access is only inside action closures.
 import useCallStore from './useCallStore';
+import {
+  ensureWebRtcGlobals,
+  MEDIASOUP_HANDLER_NAME,
+} from '../libs/webrtc-globals';
 
 // Module-level guard prevents duplicate consumption race conditions.
 const _consumingProducerIds = new Set<string>();
@@ -25,9 +29,12 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
     initSFU: async () => {
       try {
         if (get().sfu.device) return;
+
+        ensureWebRtcGlobals();
+
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { Device } = require('mediasoup-client');
-        const device = new Device();
+        const device = new Device({ handlerName: MEDIASOUP_HANDLER_NAME });
         set((prev) => ({ sfu: { ...prev.sfu, device } }));
       } catch (error) {
         console.error('[SFU] Failed to initialize device:', error);

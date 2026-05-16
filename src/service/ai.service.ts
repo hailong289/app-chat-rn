@@ -237,4 +237,56 @@ export const aiService = {
 
     return { translated, from, to };
   },
+
+  getUsageReport: async (params?: {
+    service?: string;
+    userId?: string;
+    from?: string;
+    to?: string;
+    groupBy?: "service" | "userId" | "day";
+  }): Promise<{
+    groupBy: string;
+    total: number;
+    items: Array<{
+      group: string;
+      totalCalls: number;
+      successCalls: number;
+      errorCalls: number;
+      totalTokenInput: number;
+      totalTokenOutput: number;
+      totalCostUsd: number;
+      avgLatencyMs: number;
+      uniqueUserCount: number;
+    }>;
+  }> => {
+    const response = await apiService.get<{
+      data?: {
+        groupBy?: string;
+        total?: number;
+        items?: unknown[];
+      };
+    }>("/ai/usage/report", params);
+    const data = response?.data?.data ?? response?.data;
+    const fallback = {
+      groupBy: params?.groupBy || "service",
+      total: 0,
+      items: [] as unknown[],
+    };
+    const payload = (data as typeof fallback | undefined) ?? fallback;
+    return payload as {
+      groupBy: string;
+      total: number;
+      items: Array<{
+        group: string;
+        totalCalls: number;
+        successCalls: number;
+        errorCalls: number;
+        totalTokenInput: number;
+        totalTokenOutput: number;
+        totalCostUsd: number;
+        avgLatencyMs: number;
+        uniqueUserCount: number;
+      }>;
+    };
+  },
 };

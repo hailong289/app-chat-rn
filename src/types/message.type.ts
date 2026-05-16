@@ -7,6 +7,64 @@ export type MessageSender = {
   avatar: string;
 };
 
+export type RoomEventActor = {
+  _id: string;
+  id: string;
+  fullname: string;
+  avatar: string;
+};
+
+export type RoomEventType = {
+  event_id: string;
+  event_type:
+    | "member.joined"
+    | "member.added"
+    | "member.left"
+    | "member.deleted"
+    | "member.create"
+    | "member.edit"
+    | "member.pinded"
+    | "member.unPinded"
+    | "member.change.role"
+    | "member.change.name"
+    | "member.change.avatar"
+    | "member.change.nickName"
+    | "call.started"
+    | "call.joined"
+    | "call.left"
+    | "call.ended";
+  placeholder: string;
+  payload?: Record<string, unknown>;
+  payloadJson?: string;
+  createdAt: string;
+  actor: RoomEventActor | null;
+  targets: RoomEventActor[];
+};
+
+export interface CallMember {
+  id: string;
+  user_id?: string;
+  fullname: string;
+  avatar: string;
+  is_caller: boolean;
+  status: "initiated" | "started" | "pending" | "accepted" | "cancelled" | "rejected" | "missed" | "ended" | "joined";
+}
+
+export interface CallHistoryType {
+  _id: string;
+  call_id: string;
+  room_id: string;
+  call_type: "audio" | "video";
+  call_mode?: "p2p" | "sfu";
+  message_id: string;
+  members: CallMember[];
+  started_at: string;
+  ended_at: string;
+  duration: number;
+  caller_id?: string;
+  callee_id?: string;
+}
+
 export type MessageType = {
   id: string;
   roomId: string;
@@ -43,6 +101,7 @@ export type MessageType = {
   };
   isMine: boolean;
   isRead: boolean;
+  hiddenBy?: string[];
   hiddenByMe: boolean;
   hiddenAt: string | null;
   read_by?: Array<{
@@ -65,6 +124,9 @@ export type MessageType = {
   | "uploading"
   | "uploaded"
   | "recalled";
+  room_event?: RoomEventType | null;
+  call_history?: CallHistoryType | null;
+  placeholder?: string;
 };
 
 

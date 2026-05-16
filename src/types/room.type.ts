@@ -27,6 +27,9 @@ export interface LastMessage {
 }
 
 export interface Room {
+    /** MongoDB document id — socket `message:upsert` may use this as `roomId`. */
+    _id?: string;
+    _mongoId?: string;
     id: string; // Primary key - must not be null
     roomId: string;
     type: "group" | "private" | "channel";

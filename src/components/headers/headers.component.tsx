@@ -1,5 +1,12 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StatusBar, StatusBarStyle } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StatusBar,
+  StatusBarStyle,
+  StyleSheet,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Box } from '@/src/components/ui/box';
 import { HStack } from '@/src/components/ui/hstack';
@@ -31,7 +38,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
   onRightPress,
   backgroundColor = '#42A59F',
   statusBarStyle = 'light-content',
-  height = 56,
+  height = 64,
   showStatusBar = true,
   className = '',
 }) => {
@@ -76,7 +83,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
                 activeOpacity={0.7}
                 style={{ padding: 4 }}
               >
-                <FontAwesome name={leftIcon as any} size={20} color="#FFFFFF" />
+                <FontAwesome name={leftIcon as any} size={22} color="#FFFFFF" />
               </TouchableOpacity>
             )}
           </Box>
@@ -88,7 +95,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
             ) : (
               title && (
                 <Text
-                  className="text-white text-[18px] font-bold text-center"
+                  style={styles.title}
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
@@ -109,7 +116,7 @@ const HeaderComponent: React.FC<HeaderProps> = ({
                   activeOpacity={0.7}
                   style={{ padding: 4 }}
                 >
-                  <FontAwesome name={rightIcon as any} size={20} color="#FFFFFF" />
+                  <FontAwesome name={rightIcon as any} size={22} color="#FFFFFF" />
                 </TouchableOpacity>
               )
             )}
@@ -119,6 +126,16 @@ const HeaderComponent: React.FC<HeaderProps> = ({
     </>
   );
 };
+
+const styles = StyleSheet.create({
+  title: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    lineHeight: 30,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+});
 
 export default HeaderComponent;
 

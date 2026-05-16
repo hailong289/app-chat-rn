@@ -9,13 +9,26 @@ import FontAwesome from '@react-native-vector-icons/fontawesome';
 import useRoomStore from '@/src/store/useRoom';
 import { MainStackParamList } from '@/src/navigations/MainStackNavigator';
 import useContactStore from '@/src/store/useContact';
+import { resolveCanonicalRoomId } from '@/src/libs/normalize-socket-message';
 
-const HeaderChatComponent: React.FC<StackHeaderProps> = (props) => {
+type HeaderChatProps = StackHeaderProps & {
+  onInfoPress?: () => void;
+};
+
+const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
+  const { onInfoPress } = props;
   const insets = useSafeAreaInsets();
-  const { rooms } = useRoomStore();
+  const { rooms, room: activeRoom } = useRoomStore();
   const { groups } = useContactStore();
   const params = props.route.params as MainStackParamList['Chat'];
-  const room = rooms.find((r) => r.id === params?.roomId || r.roomId === params?.roomId) || groups.find((g) => g.roomId === params?.roomId) || null;
+  const chatId = params?.roomId ? resolveCanonicalRoomId(params.roomId) : '';
+  const room =
+    (activeRoom && (activeRoom.id === chatId || activeRoom.roomId === chatId)
+      ? activeRoom
+      : null) ||
+    rooms.find((r) => r.id === chatId || r.roomId === chatId) ||
+    groups.find((g) => g.roomId === chatId || g.id === chatId) ||
+    null;
   const backgroundColor = '#42A59F';
   const statusBarStyle: StatusBarStyle = 'light-content';
   const height = 56;
@@ -93,22 +106,12 @@ const HeaderChatComponent: React.FC<StackHeaderProps> = (props) => {
           {/* Right Section */}
           <Box className="flex-row items-center gap-2" style={{ minWidth: 40 }}>
             <TouchableOpacity
-              onPress={() => {
-                // TODO: Handle phone call
-              }}
+              onPress={onInfoPress}
               activeOpacity={0.7}
               style={{ padding: 4 }}
+              accessibilityLabel="Thông tin phòng"
             >
-              <FontAwesome name="phone" size={20} color="#FFFFFF" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => {
-                // TODO: Handle video call
-              }}
-              activeOpacity={0.7}
-              style={{ padding: 4 }}
-            >
-              <FontAwesome name="video-camera" size={20} color="#FFFFFF" />
+              <FontAwesome name="info-circle" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </Box>
         </HStack>

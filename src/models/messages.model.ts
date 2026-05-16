@@ -18,18 +18,22 @@ export class Messages {
         "reply",
         "isMine",
         "isRead",
+        "hiddenBy",
         "hiddenByMe",
         "hiddenAt",
         "read_by",
         "isDeleted",
         "read_by_count",
-        "status"
+        "status",
+        "call_history"
     ];
 
     protected cast = {
         "reactions": "array",
         "reply": "object",
-        "read_by": "object"
+        "read_by": "object",
+        "hiddenBy": "array",
+        "call_history": "object"
     };
 
     static getInstance() {
@@ -40,7 +44,7 @@ export class Messages {
     }
 
     private q() {
-        return db.setTable(this.tableName).setCast(this.cast);
+        return db.setTable(this.tableName).setCast(this.cast).setFields(this.field);
     }
 
     getQuery() {
@@ -64,12 +68,14 @@ export class Messages {
             reply TEXT,
             isMine INTEGER DEFAULT 0,
             isRead INTEGER DEFAULT 0,
+            hiddenBy TEXT,
             hiddenByMe INTEGER DEFAULT 0,
             hiddenAt TEXT,
             read_by TEXT,
             isDeleted INTEGER DEFAULT 0,
             read_by_count INTEGER DEFAULT 0,
-            status TEXT
+            status TEXT,
+            call_history TEXT
             )
         `;
     }

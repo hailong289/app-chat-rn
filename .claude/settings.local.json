@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l src/components/chat/**/*.tsx src/components/chat/**/*.ts src/components/chat/*.tsx)",
+      "Bash(wc -l src/components/chat/message/*.tsx src/components/chat/message/*.ts)",
+      "Bash(npx tsc *)"
+    ]
+  }
+}

@@ -59,7 +59,8 @@ export default class AuthService {
 
     // ── Update Profile ─────────────────────────────────────────────────
     public static async updateProfile(data: UpdateProfilePayload) {
-        return apiService.post<ApiResponse<any>>('/auth/update-profile', data);
+        const { callback: _callback, ...body } = data;
+        return apiService.post<ApiResponse<any>>('/auth/update-profile', body);
     }
 
     // ── Update Avatar ──────────────────────────────────────────────────
