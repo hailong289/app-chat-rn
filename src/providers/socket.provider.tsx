@@ -13,6 +13,7 @@ import useAuthStore from "../store/useAuth";
 import { WS_URL } from '@/env.json';
 import useRoomStore from "../store/useRoom";
 import useMessageStore from "../store/useMessage";
+import useContactStore from "../store/useContact";
 import networkListener from "../libs/networkListener";
 
 // Socket event constants
@@ -311,13 +312,23 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       });
 
       s.on(SocketEvents.MESSAGE_REACTION_ADDED, (data: any) => {
-        const { upsertMessage } = useMessageStore.getState();
-        if (data && data.id) upsertMessage(data);
+        if (data?.messageId && data?.emoji && data?.userId) {
+          const { addReaction } = useMessageStore.getState();
+          addReaction(data.roomId, data.messageId, data.emoji, data.userId);
+        } else {
+          const { upsertMessage } = useMessageStore.getState();
+          if (data && data.id) upsertMessage(data);
+        }
       });
 
       s.on(SocketEvents.MESSAGE_REACTION_REMOVED, (data: any) => {
-        const { upsertMessage } = useMessageStore.getState();
-        if (data && data.id) upsertMessage(data);
+        if (data?.messageId && data?.emoji && data?.userId) {
+          const { removeReaction } = useMessageStore.getState();
+          removeReaction(data.roomId, data.messageId, data.emoji, data.userId);
+        } else {
+          const { upsertMessage } = useMessageStore.getState();
+          if (data && data.id) upsertMessage(data);
+        }
       });
 
       // ── Room events ─────────────────────────────────────────────────
@@ -365,11 +376,17 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
       // ── Presence events ─────────────────────────────────────────────
       s.on(SocketEvents.PRESENCE_ONLINE, (data: { userId: string }) => {
-        // Can update contact store
+        if (data?.userId) {
+          const { setUserOnline } = useContactStore.getState();
+          setUserOnline(data.userId);
+        }
       });
 
       s.on(SocketEvents.PRESENCE_OFFLINE, (data: { userId: string }) => {
-        // Can update contact store
+        if (data?.userId) {
+          const { setUserOffline } = useContactStore.getState();
+          setUserOffline(data.userId);
+        }
       });
 
       // ── Read events ─────────────────────────────────────────────────

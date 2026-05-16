@@ -14,14 +14,15 @@ interface ContactState {
     groups: Room[];
     users: User[];
     friends_suggestions: any[];
-    loading: { 
-        friends: boolean; 
-        friendRequests: boolean; 
-        users: boolean; 
-        sendFriendRequest: boolean; 
-        sentFriendRequests: boolean; 
-        acceptFriendRequest: boolean; 
-        rejectFriendRequest: boolean; 
+    onlineUsers: Record<string, boolean>;
+    loading: {
+        friends: boolean;
+        friendRequests: boolean;
+        users: boolean;
+        sendFriendRequest: boolean;
+        sentFriendRequests: boolean;
+        acceptFriendRequest: boolean;
+        rejectFriendRequest: boolean;
         groups: boolean;
         blockFriend: boolean;
         friendSuggestions: boolean;
@@ -37,6 +38,8 @@ interface ContactState {
     blockFriend: (userId: string) => Promise<void>;
     unblockFriend: (userId: string) => Promise<void>;
     getFriendSuggestions: (limit?: number) => Promise<void>;
+    setUserOnline: (userId: string) => void;
+    setUserOffline: (userId: string) => void;
 }
 
 const useContactStore = create<ContactState>()(
@@ -47,7 +50,8 @@ const useContactStore = create<ContactState>()(
         groups: [],
         users: [],
         friends_suggestions: [],
-        loading: { 
+        onlineUsers: {},
+        loading: {
             friends: false, 
             friendRequests: false, 
             users: false, 
@@ -266,6 +270,19 @@ const useContactStore = create<ContactState>()(
                 set({ loading: { ...get().loading, friendSuggestions: false } });
                 console.error("Get friend suggestions failed:", error);
             }
+        },
+        // ── Online Presence ────────────────────────────────────────────
+        setUserOnline: (userId: string) => {
+            set((state) => ({
+                onlineUsers: { ...state.onlineUsers, [userId]: true },
+            }));
+        },
+        setUserOffline: (userId: string) => {
+            set((state) => {
+                const next = { ...state.onlineUsers };
+                delete next[userId];
+                return { onlineUsers: next };
+            });
         },
     })
 );
