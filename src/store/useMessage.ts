@@ -16,6 +16,8 @@ interface MessageState {
     upsertMessage: (msg: MessageType) => Promise<void>;
     sendMessageWithAttachments: (roomId: string, messageId: string, attachments: FilePreview[], socket: any, data: MessageType) => Promise<void>;
     updateAttachmentProgress: (roomId: string, messageId: string, fileId: string, progress: number, status?: string) => void;
+    addReaction: (roomId: string, messageId: string, emoji: string, userId: string) => void;
+    removeReaction: (roomId: string, messageId: string, emoji: string, userId: string) => void;
 }
 
 const useMessageStore = create<MessageState>()(
@@ -359,23 +361,19 @@ const useMessageStore = create<MessageState>()(
         upsertMessage: async (msg: MessageType) => {
           if (!msg.roomId) return;
           msg.status = "delivered";
-          // Lấy state hiện tại
           const prevRoom = get().messagesRoom[msg.roomId] || {};
           const prevMessages = prevRoom.messages || [];
-  
-          // Tìm vị trí message theo id
+
           const existingIndex = prevMessages.findIndex(
             (m) => m.id === msg.id
           );
-  
+
           let updatedMessages: MessageType[];
           if (existingIndex === -1) {
-            // ID không tồn tại → thêm vào cuối
             updatedMessages = [...prevMessages, msg];
           } else {
-            // ID đã tồn tại → cập nhật tại chỗ
-            updatedMessages = prevMessages.map((msg, idx) =>
-              idx === existingIndex ? msg : msg
+            updatedMessages = prevMessages.map((m, idx) =>
+              idx === existingIndex ? msg : m
             );
           }
 
@@ -385,12 +383,59 @@ const useMessageStore = create<MessageState>()(
               [msg.roomId]: {
                 ...prevRoom,
                 messages: updatedMessages,
-                // Cập nhật last_message_id nếu tin đã đọc
                 ...(msg.isRead && { last_message_id: msg.id }),
               },
             },
           });
-        }
+        },
+        // ── Reactions ──────────────────────────────────────────────────
+        addReaction: (roomId: string, messageId: string, emoji: string, userId: string) => {
+          const room = get().messagesRoom[roomId];
+          if (!room?.messages) return;
+          const updatedMessages = room.messages.map((msg) => {
+            if (msg.id !== messageId) return msg;
+            const reactions = [...(msg.reactions || [])];
+            const existingIdx = reactions.findIndex((r) => r.emoji === emoji);
+            if (existingIdx >= 0) {
+              reactions[existingIdx] = {
+                ...reactions[existingIdx],
+                userIds: [...(reactions[existingIdx].userIds || []), userId],
+                count: (reactions[existingIdx].count || 0) + 1,
+              };
+            } else {
+              reactions.push({ emoji, count: 1, userIds: [userId] });
+            }
+            return { ...msg, reactions };
+          });
+          set({
+            messagesRoom: {
+              ...get().messagesRoom,
+              [roomId]: { ...room, messages: updatedMessages },
+            },
+          });
+        },
+        removeReaction: (roomId: string, messageId: string, emoji: string, userId: string) => {
+          const room = get().messagesRoom[roomId];
+          if (!room?.messages) return;
+          const updatedMessages = room.messages.map((msg) => {
+            if (msg.id !== messageId) return msg;
+            const reactions = (msg.reactions || [])
+              .map((r) => {
+                if (r.emoji !== emoji) return r;
+                const userIds = (r.userIds || []).filter((id) => id !== userId);
+                const count = userIds.length;
+                return count > 0 ? { ...r, userIds, count } : null;
+              })
+              .filter(Boolean);
+            return { ...msg, reactions };
+          });
+          set({
+            messagesRoom: {
+              ...get().messagesRoom,
+              [roomId]: { ...room, messages: updatedMessages },
+            },
+          });
+        },
     })
 );
 

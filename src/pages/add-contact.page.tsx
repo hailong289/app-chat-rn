@@ -11,6 +11,7 @@ import { Toast } from 'toastify-react-native';
 import useContactStore from '../store/useContact';
 import { User } from '../types/user.type';
 import { MainStackParamList } from '../navigations/MainStackNavigator';
+import { FriendSuggestions } from '../components/contact/friend-suggestions.component';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
@@ -101,15 +102,7 @@ const AddContactPage = () => {
         keyboardShouldPersistTaps="handled"
       >
         {searchQuery.trim().length === 0 ? (
-          <VStack className="items-center justify-center py-20 px-5">
-            <FontAwesome name="user-plus" size={64} color="#E5E7EB" />
-            <Text className="text-[18px] font-semibold text-gray-400 mt-4">
-              Tìm kiếm bạn để kết nối ngay
-            </Text>
-            <Text className="text-[14px] text-gray-400 mt-2 text-center">
-              Nhập tên, email hoặc số điện thoại để tìm kiếm
-            </Text>
-          </VStack>
+          <FriendSuggestions />
         ) : loading.users ? (
           <VStack className="items-center justify-center py-20 px-5">
             <ActivityIndicator size="large" color="#42A59F" />

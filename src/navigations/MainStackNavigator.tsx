@@ -5,6 +5,9 @@ import MainNavigator, { MainTabParamList } from './MainNavigator';
 import SearchPage from '../pages/search.page';
 import ChatPage from '../pages/chat.page';
 import AddContactPage from '../pages/add-contact.page';
+import CallPage from '../pages/call.page';
+import DocumentListPage from '../pages/docs/document-list';
+import DocumentEditorPage from '../pages/docs/document-editor';
 import HeaderSearchComponent from '../components/headers/headers-search.component';
 import HeaderChatComponent from '../components/headers/headers-chat.component';
 
@@ -15,6 +18,19 @@ export type MainStackParamList = {
         roomId: string;
     };
     AddContact: undefined;
+    Call: {
+        roomId: string;
+        members: string;
+        callType: 'audio' | 'video';
+        callMode: 'p2p' | 'sfu';
+        status: string;
+        callId?: string;
+        isCaller?: boolean;
+    };
+    DocumentList: undefined;
+    DocumentEditor: {
+        docId: string;
+    };
 };
 
 const MainStack = createStackNavigator<MainStackParamList>();
@@ -57,6 +73,30 @@ const MainStackNavigator = () => {
                 component={AddContactPage} 
                 options={{ 
                     headerShown: false
+                }}
+            />
+            <MainStack.Screen
+                name="Call"
+                component={CallPage}
+                options={{
+                    headerShown: false,
+                    gestureEnabled: false,
+                    presentation: 'modal',
+                }}
+            />
+            <MainStack.Screen
+                name="DocumentList"
+                component={DocumentListPage}
+                options={{
+                    headerShown: false,
+                }}
+            />
+            <MainStack.Screen
+                name="DocumentEditor"
+                component={DocumentEditorPage}
+                options={{
+                    headerShown: false,
+                    gestureEnabled: true,
                 }}
             />
         </MainStack.Navigator>

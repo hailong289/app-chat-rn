@@ -9,17 +9,23 @@ import { Button, ButtonSpinner, ButtonText } from '../components/ui/button';
 import useAuthStore from '../store/useAuth';
 import { Toast } from 'toastify-react-native';
 import { useSQLite } from '../providers/sqlite.provider';
+import { EditProfileModal } from '../components/modals/edit-profile.modal';
+import { UpdatePasswordModal } from '../components/modals/update-password.modal';
 
 const items = [
-  { title: 'Cài đặt tài khoản', subtitle: 'Cập nhật thông tin' },
-  { title: 'Cài đặt tin nhắn', subtitle: 'Thiết lập cài đặt tin nhắn' },
-  { title: 'Tích hợp', subtitle: 'Thiết lập tích hợp' },
-  { title: 'Hỗ trợ', subtitle: 'Gửi phản hồi' },
+  { id: 'profile', title: 'Cài đặt tài khoản', subtitle: 'Cập nhật thông tin' },
+  { id: 'password', title: 'Đổi mật khẩu', subtitle: 'Thay đổi mật khẩu' },
+  { id: 'messages', title: 'Cài đặt tin nhắn', subtitle: 'Thiết lập cài đặt tin nhắn' },
+  { id: 'integrations', title: 'Tích hợp', subtitle: 'Thiết lập tích hợp' },
+  { id: 'support', title: 'Hỗ trợ', subtitle: 'Gửi phản hồi' },
 ];
 
 const SettingsPage = () => {
   const { isLoading, logout } = useAuthStore();
   const { resetDatabase } = useSQLite();
+  const [isEditProfileVisible, setIsEditProfileVisible] = React.useState(false);
+  const [isUpdatePasswordVisible, setIsUpdatePasswordVisible] = React.useState(false);
+
   const handleLogout = () => {
     // Xử lý đăng xuất ở đây
     logout({
@@ -49,7 +55,14 @@ const SettingsPage = () => {
     <ScrollView className="flex-1 bg-white" contentContainerStyle={{ paddingVertical: 18 }}>
       <Box className="px-4">
         {items.map((it, idx) => (
-          <TouchableOpacity key={idx} activeOpacity={0.7}>
+          <TouchableOpacity 
+            key={idx} 
+            activeOpacity={0.7}
+            onPress={() => {
+              if (it.id === 'profile') setIsEditProfileVisible(true);
+              else if (it.id === 'password') setIsUpdatePasswordVisible(true);
+            }}
+          >
             <HStack className="items-center py-5 border-b border-secondary-200 border-gray-300">
               <VStack className="flex-1">
                 <Text className="text-[18px] font-bold text-typography-950">{it.title}</Text>
@@ -74,14 +87,23 @@ const SettingsPage = () => {
         </TouchableOpacity>
         <Button
           className="mt-4 rounded-[20px] h-[50px] bg-error-500"
-          // variant="negative"
           onPress={handleLogout}
-          // isDisabled={isLoading}
+          isDisabled={isLoading}
         >
           {isLoading && <ButtonSpinner color="gray" />}
           <ButtonText className="text-white text-lg">Đăng xuất</ButtonText>
         </Button>
       </Box>
+
+      <EditProfileModal
+        visible={isEditProfileVisible}
+        onClose={() => setIsEditProfileVisible(false)}
+      />
+      
+      <UpdatePasswordModal
+        visible={isUpdatePasswordVisible}
+        onClose={() => setIsUpdatePasswordVisible(false)}
+      />
     </ScrollView>
   );
 };

@@ -258,16 +258,37 @@ class DB {
 
         const columns = Object.keys(dataArray[0]);
         const placeholders = columns.map(() => '?').join(',');
-        const query = `INSERT INTO ${this.bindings.table.name} (${columns.join(',')}) VALUES (${placeholders})`;
+        const query = `INSERT OR REPLACE INTO ${this.bindings.table.name} (${columns.join(',')}) VALUES (${placeholders})`;
 
-        const results = [];
-        for (const data of dataArray) {
-            const values = columns.map(col => this.convertValue(data[col]));
-            const result = await this.db.executeAsync(query, values);
-            results.push(result);
+        // Use a single transaction for bulk inserts
+        await this.db.executeAsync('BEGIN TRANSACTION');
+        try {
+            const results = [];
+            for (const data of dataArray) {
+                const values = columns.map(col => this.convertValue(data[col]));
+                const result = await this.db.executeAsync(query, values);
+                results.push(result);
+            }
+            await this.db.executeAsync('COMMIT');
+            this.clear();
+            return results;
+        } catch (error) {
+            await this.db.executeAsync('ROLLBACK');
+            this.clear();
+            throw error;
         }
-        this.clear();
-        return results;
+    }
+
+    public async executeTransaction<T>(fn: () => Promise<T>): Promise<T> {
+        await this.db.executeAsync('BEGIN TRANSACTION');
+        try {
+            const result = await fn();
+            await this.db.executeAsync('COMMIT');
+            return result;
+        } catch (error) {
+            await this.db.executeAsync('ROLLBACK');
+            throw error;
+        }
     }
 
     public async update(data: Record<string, any>) {

@@ -1,7 +1,6 @@
-import React from 'react';
-import { View, Text, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Image, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
 import { FilePreview } from '@/src/types/message.type';
-import { Dimensions } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MAX_GRID_WIDTH = SCREEN_WIDTH * 0.75;
@@ -30,6 +29,20 @@ const ImageGridItem: React.FC<ImageGridItemProps> = ({
   getAttachmentSource,
 }) => {
   const sourceUri = getAttachmentSource(attachment);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [shouldLoad, setShouldLoad] = useState(false);
+
+  // Lazy load: chỉ load khi component mount (có thể mở rộng với IntersectionObserver nếu cần)
+  useEffect(() => {
+    // Delay nhỏ để tránh load tất cả cùng lúc
+    const timer = setTimeout(() => {
+      setShouldLoad(true);
+    }, index * 50); // Stagger loading
+
+    return () => clearTimeout(timer);
+  }, [index]);
+
   if (!sourceUri) return null;
 
   const isLastInGrid = count > 4 && index === 3;
@@ -58,11 +71,62 @@ const ImageGridItem: React.FC<ImageGridItemProps> = ({
         marginBottom: gap,
       }}
     >
-      <Image
-        source={{ uri: sourceUri }}
-        style={{ width: '100%', height: '100%', borderRadius: 8 }}
-        resizeMode="cover"
-      />
+      {shouldLoad && !hasError ? (
+        <>
+          {isLoading && (
+            <View
+              style={{
+                position: 'absolute',
+                width: '100%',
+                height: '100%',
+                borderRadius: 8,
+                backgroundColor: '#f0f0f0',
+                justifyContent: 'center',
+                alignItems: 'center',
+                zIndex: 1,
+              }}
+            >
+              <ActivityIndicator size="small" color="#9CA3AF" />
+            </View>
+          )}
+          <Image
+            source={{ uri: sourceUri }}
+            style={{ width: '100%', height: '100%', borderRadius: 8 }}
+            resizeMode="cover"
+            onLoad={() => setIsLoading(false)}
+            onError={() => {
+              setIsLoading(false);
+              setHasError(true);
+            }}
+          />
+        </>
+      ) : hasError ? (
+        <View
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: 8,
+            backgroundColor: '#f0f0f0',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{ color: '#9CA3AF', fontSize: 10 }}>Lỗi tải ảnh</Text>
+        </View>
+      ) : (
+        <View
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: 8,
+            backgroundColor: '#f0f0f0',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <ActivityIndicator size="small" color="#9CA3AF" />
+        </View>
+      )}
       
       {/* Overlay hiển thị trạng thái upload */}
       {(isUploading || isPending || isFailed) && (

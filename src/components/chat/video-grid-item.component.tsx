@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { FilePreview } from '@/src/types/message.type';
 import { Dimensions } from 'react-native';
-import Video from 'react-native-video';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MAX_GRID_WIDTH = SCREEN_WIDTH * 0.75;
@@ -31,8 +30,10 @@ const VideoGridItem: React.FC<VideoGridItemProps> = ({
   onVideoPress,
   getAttachmentSource,
 }) => {
-  const sourceUri = getAttachmentSource(attachment);
+  // Ưu tiên thumbUrl cho video thumbnail, tránh load full video
+  const thumbnailUri = attachment.thumbUrl || attachment.url;
   const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
   const isLastInGrid = count > 4 && index === 3;
   const remainingCount = count > 4 ? count - 4 : 0;
   const isThirdVideo = count === 3 && index === 2;
@@ -52,7 +53,7 @@ const VideoGridItem: React.FC<VideoGridItemProps> = ({
         position: 'relative',
       }}
     >
-      {sourceUri ? (
+      {thumbnailUri && !hasError ? (
         <>
           {isLoading && (
             <View
@@ -70,15 +71,15 @@ const VideoGridItem: React.FC<VideoGridItemProps> = ({
               <ActivityIndicator size="small" color="#9CA3AF" />
             </View>
           )}
-          <Video
-            source={{ uri: sourceUri }}
+          <Image
+            source={{ uri: thumbnailUri }}
             style={{ width: '100%', height: '100%', borderRadius: 8 }}
             resizeMode="cover"
-            paused={true}
-            muted={true}
-            controls={false}
             onLoad={() => setIsLoading(false)}
-            onError={() => setIsLoading(false)}
+            onError={() => {
+              setIsLoading(false);
+              setHasError(true);
+            }}
           />
         </>
       ) : (
@@ -105,6 +106,7 @@ const VideoGridItem: React.FC<VideoGridItemProps> = ({
           bottom: 0,
           justifyContent: 'center',
           alignItems: 'center',
+          pointerEvents: 'none',
         }}
       >
         <View

@@ -5,6 +5,7 @@ import { ContactTabFriends } from '@/src/components/contact/contact-tab-friends.
 import { ContactTabGroups } from '@/src/components/contact/contact-tab-groups.component';
 import { ContactTabRequest } from '@/src/components/contact/contact-tab-request.component';
 import { ContactTabPending } from '@/src/components/contact/conact-tab-pending.component';
+import ContactTabOnline from '@/src/components/contact/contact-tab-online';
 import {
   contactMockFriends,
   contactMockFriendRequests,
@@ -15,14 +16,17 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import HeaderSearchComponent from '@/src/components/headers/headers-search.component';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { MainStackParamList } from '@/src/navigations/MainStackNavigator';
+import useContactStore from '@/src/store/useContact';
+import useRoomStore from '@/src/store/useRoom';
 
-type TabType = 'friends' | 'groups' | 'requests' | 'pending';
+type TabType = 'friends' | 'online' | 'groups' | 'requests' | 'pending';
 
 const ContactPage = () => {
   const route = useRoute<RouteProp<MainTabParamList, 'Contact'>>();
   const [activeTab, setActiveTab] = useState<TabType>((route.params?.activeTab as TabType) || 'friends');
   const [searchQueries, setSearchQueries] = useState<Record<TabType, string>>({
     friends: '',
+    online: '',
     groups: '',
     requests: '',
     pending: '',
@@ -38,11 +42,17 @@ const ContactPage = () => {
     }));
   };
 
+  const { friends, friendRequests, sentFriendRequests, groups } = useContactStore();
+
+  const { onlineUsers } = useContactStore();
+  const onlineCount = Object.keys(onlineUsers).length;
+
   const tabs = [
-    { key: 'friends' as TabType, label: 'Bạn bè', count: contactMockFriends.length },
-    { key: 'groups' as TabType, label: 'Nhóm', count: contactMockGroups.length },
-    { key: 'requests' as TabType, label: 'Yêu cầu', count: contactMockFriendRequests.length },
-    { key: 'pending' as TabType, label: 'Đã gửi kết bạn', count: 0 },
+    { key: 'friends' as TabType, label: 'Bạn bè', count: friends.length },
+    { key: 'online' as TabType, label: 'Online', count: onlineCount },
+    { key: 'groups' as TabType, label: 'Nhóm', count: groups.length },
+    { key: 'requests' as TabType, label: 'Yêu cầu', count: friendRequests.length },
+    { key: 'pending' as TabType, label: 'Đã gửi', count: sentFriendRequests.length },
   ];
 
   return (
@@ -52,7 +62,7 @@ const ContactPage = () => {
           onRightPress={() => {
               navigation.navigate('AddContact');
           }}
-          searchPlaceholder={`Tìm kiếm ${activeTab === 'friends' ? 'bạn bè' : activeTab === 'groups' ? 'nhóm' : activeTab === 'requests' ? 'yêu cầu' : 'đã gửi kết bạn'}...`}
+          searchPlaceholder={`Tìm kiếm ${activeTab === 'friends' ? 'bạn bè' : activeTab === 'online' ? 'bạn đang online' : activeTab === 'groups' ? 'nhóm' : activeTab === 'requests' ? 'yêu cầu' : 'đã gửi kết bạn'}...`}
           autoFocus={true}
           backgroundColor="#42A59F"
           statusBarStyle="light-content"
@@ -88,7 +98,7 @@ const ContactPage = () => {
               numberOfLines={2}
               style={{ lineHeight: 18 }}
             >
-              {tab.label}
+              {tab.label} {tab.count > 0 && `(${tab.count})`}
             </Text>
           </TouchableOpacity>
         ))}
@@ -98,6 +108,9 @@ const ContactPage = () => {
       <View style={{ paddingBottom: 20 }}>
         {activeTab === 'friends' && (
           <ContactTabFriends key="friends" searchQuery={searchQueries.friends} />
+        )}
+        {activeTab === 'online' && (
+          <ContactTabOnline key="online" />
         )}
         {activeTab === 'groups' && (
           <ContactTabGroups key="groups" searchQuery={searchQueries.groups} />

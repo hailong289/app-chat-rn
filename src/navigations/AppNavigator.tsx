@@ -1,9 +1,12 @@
-import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useRef, useEffect } from 'react';
+import { NavigationContainer, NavigationContainerRef } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import AuthNavigator from './AuthNavigator';
 import MainStackNavigator from './MainStackNavigator';
 import useAuthStore from '../store/useAuth';
+import { setCallNavigationRef } from '../store/useCallStore';
+import { setNotificationNavRef, setupNotificationHandlers } from '../libs/notificationHandler';
+import IncomingCallOverlay from '../components/call/incoming-call';
 
 export type RootStackParamList = {
     Auth: undefined;
@@ -11,12 +14,23 @@ export type RootStackParamList = {
 };
 
 const RootStack = createStackNavigator<RootStackParamList>();
-// Root navigator
+
 const AppNavigator = () => {
-    const { isAuthenticated } = useAuthStore(); 
+    const { isAuthenticated } = useAuthStore();
+    const navigationRef = useRef<NavigationContainerRef<any>>(null);
+
+    useEffect(() => {
+        setupNotificationHandlers();
+    }, []);
 
     return (
-        <NavigationContainer>
+        <NavigationContainer
+            ref={navigationRef}
+            onReady={() => {
+                setCallNavigationRef(navigationRef.current);
+                setNotificationNavRef(navigationRef.current);
+            }}
+        >
             <RootStack.Navigator screenOptions={{ headerShown: false }}>
                 {isAuthenticated ? (
                     <RootStack.Screen name="MainStack" component={MainStackNavigator} />
@@ -24,6 +38,8 @@ const AppNavigator = () => {
                     <RootStack.Screen name="Auth" component={AuthNavigator} />
                 )}
             </RootStack.Navigator>
+            {/* Incoming call overlay — mounted globally so it shows on any screen */}
+            <IncomingCallOverlay />
         </NavigationContainer>
     );
 };

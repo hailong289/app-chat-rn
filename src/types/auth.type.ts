@@ -57,10 +57,32 @@ export interface PayloadResetPassword {
     error: (error?: any) => void;
 }
 
+export interface UpdateProfilePayload {
+    fullname?: string;
+    gender?: 'male' | 'female' | 'other';
+    dateOfBirth?: string;
+    address?: string;
+    email?: string;
+    phone?: string;
+    callback?: (error?: any) => void;
+}
+
+export interface UpdateAvatarPayload {
+    file: any; // File object for RN
+    callback?: (error?: any) => void;
+}
+
+export interface UpdatePasswordPayload {
+    currentPassword: string;
+    newPassword: string;
+    callback?: (error?: any) => void;
+}
+
 // type state 
 export interface AuthState {
     isAuthenticated: boolean;
     isLoading: boolean;
+    isRefreshing: boolean;
     user: User | null;
     tokens: {
         accessToken: string | null;
@@ -75,4 +97,17 @@ export interface AuthState {
     verifyOtp: (payload: PayloadVerifyOtp) => Promise<void>;
     resetPassword: (payload: PayloadResetPassword) => Promise<void>;
     clearStorage: () => Promise<void>;
+        // ── New methods added for Phase 1 completeness ──
+    fetchMe: () => Promise<void>;
+    refreshToken: () => Promise<string | null>;
+    refreshAccessToken: () => Promise<string | null>;
+    // checkRefreshing (function form) — for axios interceptor
+    checkRefreshing: () => boolean;
+    awaitRefreshIfAny: () => Promise<string | null>;
+    checkAuthInFlight: () => boolean;
+    awaitAuthInFlight: () => Promise<unknown>;
+    updateProfile: (payload: UpdateProfilePayload) => Promise<void>;
+    updateAvatar: (payload: UpdateAvatarPayload) => Promise<void>;
+    updatePassword: (payload: UpdatePasswordPayload) => Promise<void>;
+    setAuth: (isAuthenticated: boolean) => void;
 }
