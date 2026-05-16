@@ -109,25 +109,39 @@ const ChatPage: React.FC = () => {
     [messagesRoom, roomId],
   );
 
-  const renderItem = ({ item }: { item: ChatMessageItem }) => {
-    return (
-      <View onLayout={handleItemLayout(item.id)}>
-        <MessageItem
-          item={item}
-          onReply={(msg) => setReplyingTo(msg)}
-        />
-      </View>
-    );
-  };
-
-  const handleItemLayout = (id: string) => {
+  const handleItemLayout = useCallback((id: string) => {
     return (event: LayoutChangeEvent) => {
       const height = event.nativeEvent.layout.height;
       if (itemHeightCache.current[id] !== height) {
         itemHeightCache.current[id] = height;
       }
     };
-  };
+  }, []);
+
+  const handleReply = useCallback((msg: MessageType) => setReplyingTo(msg), []);
+
+  const renderItem = useCallback(
+    ({ item }: { item: ChatMessageItem }) => {
+      return (
+        <View onLayout={handleItemLayout(item.id)}>
+          <MessageItem item={item} onReply={handleReply} />
+        </View>
+      );
+    },
+    [handleItemLayout, handleReply],
+  );
+
+  const keyExtractor = useCallback((item: ChatMessageItem) => item.id, []);
+
+  const listHeaderComponent = useCallback(
+    () =>
+      isFetchingMore ? (
+        <View className="py-2">
+          <ActivityIndicator size="small" color="#4B5563" />
+        </View>
+      ) : null,
+    [isFetchingMore],
+  );
 
   // ── Load more (older messages) ─────────────────────────────────────────
   const handleLoadMore = useCallback(async () => {
@@ -219,14 +233,8 @@ const ChatPage: React.FC = () => {
           ref={flatListRef}
           data={chatData}
           renderItem={renderItem}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={
-            isFetchingMore ? (
-              <View className="py-2">
-                <ActivityIndicator size="small" color="#4B5563" />
-              </View>
-            ) : null
-          }
+          keyExtractor={keyExtractor}
+          ListHeaderComponent={listHeaderComponent}
           ListEmptyComponent={
             <View className="flex-1 items-center justify-center py-20">
               <Text className="text-gray-400">Chưa có tin nhắn nào</Text>

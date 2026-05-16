@@ -13,6 +13,7 @@ import useAuthStore from "../store/useAuth";
 import { WS_URL } from '@/env.json';
 import useRoomStore from "../store/useRoom";
 import useMessageStore from "../store/useMessage";
+import networkListener from "../libs/networkListener";
 
 // Socket event constants
 export const SocketEvents = {
@@ -232,6 +233,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       // ── Disconnect handler ──────────────────────────────────────────
       s.on("disconnect", (reason) => {
         setStatus("idle");
+        networkListener.setConnected(false);
         if (reason !== "io client disconnect") {
           retryManagerRef.current.reset();
           retryManagerRef.current
@@ -451,6 +453,7 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
       .then((s) => {
         socketRef.current = s;
         setStatus("connected");
+        networkListener.setConnected(true);
         setupSocketHandlers(s);
       })
       .catch((err) => {

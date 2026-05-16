@@ -1,5 +1,5 @@
 import { MessageType } from '@/src/types/message.type';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, memo } from 'react';
 import {
   View,
   Text,
@@ -62,7 +62,7 @@ type MessageBubbleProps = {
   onReply?: (msg: MessageType) => void;
 };
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ item, onReply }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => {
   const { socket } = useSocket();
   const { user } = useAuthStore();
 
@@ -357,27 +357,39 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ item, onReply }) => {
       />
     </>
   );
-};
+}, (prev, next) => {
+  return (
+    prev.item.id === next.item.id &&
+    prev.item.content === next.item.content &&
+    prev.item.status === next.item.status &&
+    prev.item.isDeleted === next.item.isDeleted &&
+    prev.item.pinned === next.item.pinned &&
+    JSON.stringify(prev.item.reactions) === JSON.stringify(next.item.reactions) &&
+    prev.onReply === next.onReply
+  );
+});
 
-const DateSeparator: React.FC<{ label: string }> = ({ label }) => (
+const DateSeparator: React.FC<{ label: string }> = memo(({ label }) => (
   <View className="items-center my-2">
     <Text className="text-xs text-typography-500 bg-gray-200 px-3 py-1 rounded-full">
       {label}
     </Text>
   </View>
-);
+));
 
 type MessageItemProps = {
   item: ChatMessageItem;
   onReply?: (msg: MessageType) => void;
 };
 
-const MessageItem: React.FC<MessageItemProps> = ({ item, onReply }) => {
+const MessageItem: React.FC<MessageItemProps> = memo(({ item, onReply }) => {
   if (item.kind === 'date') {
     return <DateSeparator label={item.label} />;
   }
 
-  return <MessageBubble item={item} onReply={onReply} />;
-};
+  return <MessageBubble item={item as MessageType} onReply={onReply} />;
+}, (prev, next) => {
+  return prev.item.id === next.item.id && prev.onReply === next.onReply;
+});
 
 export default MessageItem;

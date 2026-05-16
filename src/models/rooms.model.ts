@@ -77,9 +77,7 @@ export class Rooms {
         return `
             CREATE INDEX IF NOT EXISTS idx_rooms_roomId ON rooms(roomId);
             CREATE INDEX IF NOT EXISTS idx_rooms_updatedAt ON rooms(updatedAt);
-            CREATE INDEX IF NOT EXISTS idx_rooms_last_message ON rooms(last_message);
-            CREATE INDEX IF NOT EXISTS idx_rooms_is_read ON rooms(is_read);
-            CREATE INDEX IF NOT EXISTS idx_rooms_unread_count ON rooms(unread_count);
+            CREATE INDEX IF NOT EXISTS idx_rooms_type ON rooms(type);
         `;
     }
 

@@ -82,8 +82,7 @@ export class Messages {
         return `
             CREATE INDEX IF NOT EXISTS idx_messages_roomId ON messages(roomId);
             CREATE INDEX IF NOT EXISTS idx_messages_createdAt ON messages(createdAt);
-            CREATE INDEX IF NOT EXISTS idx_messages_roomId_createdAt ON messages(roomId, createdAt);
-            CREATE INDEX IF NOT EXISTS idx_messages_isMine ON messages(isMine);
+            CREATE INDEX IF NOT EXISTS idx_messages_roomId_createdAt ON messages(roomId, createdAt DESC);
         `;
     }
 }
