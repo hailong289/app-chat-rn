@@ -46,7 +46,7 @@ export const UpdatePasswordModal: React.FC<UpdatePasswordModalProps> = ({
     }
 
     updatePassword({
-      currentPassword: oldPassword,
+      oldPassword,
       newPassword,
       callback: (error: any) => {
         if (error) {

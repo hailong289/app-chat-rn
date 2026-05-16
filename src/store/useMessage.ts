@@ -82,6 +82,16 @@ const sanitizeMessageFromAPI = (msg: any): MessageType => {
     isDeleted: !!msg.isDeleted,
     read_by_count: msg.read_by_count ?? 0,
     status: (msg.status || "delivered") as MessageType["status"],
+    room_event: msg.room_event ?? null,
+    call_history: msg.call_history ?? null,
+    placeholder: msg.placeholder,
+    summary: msg.summary ?? null,
+    translation: msg.translation ?? null,
+    quiz: msg.quiz,
+    desk: msg.desk,
+    documentId: msg.documentId,
+    todoProjectId: msg.todoProjectId,
+    todoProject: msg.todoProject,
   };
 };
 

@@ -1,6 +1,4 @@
 
-
-
 export type MessageSender = {
   _id: string;
   fullname: string;
@@ -65,10 +63,23 @@ export interface CallHistoryType {
   callee_id?: string;
 }
 
+export type MessageSummary = {
+  text: string;
+  title?: string;
+  keyPoints?: string[];
+  language?: string;
+};
+
+export type MessageTranslation = {
+  text: string;
+  from?: string;
+  to: string;
+};
+
 export type MessageType = {
   id: string;
   roomId: string;
-  type: "text" | "image" | "file" | "system" | "video" | "audio" | "gif";
+  type: "text" | "image" | "file" | "system" | "video" | "audio" | "gif" | "flashcard" | "quiz" | "document" | "todo_project" | "call";
   content: string;
   createdAt: string;
   editedAt?: string | null;
@@ -127,25 +138,32 @@ export type MessageType = {
   room_event?: RoomEventType | null;
   call_history?: CallHistoryType | null;
   placeholder?: string;
+  summary?: MessageSummary | null;
+  translation?: MessageTranslation | null;
+  quiz?: any;
+  desk?: any;
+  documentId?: string;
+  todoProjectId?: string;
+  todoProject?: any;
 };
 
 
 export type FilePreview = {
   _id: string;
   kind: string;
-  url: string; // Local blob URL hoặc remote URL sau upload
+  url: string;
   name: string;
-  size: number; // Support both local and server formats
+  size: number;
   mimeType: string;
   thumbUrl?: string;
   width?: number;
   height?: number;
   duration?: number | null;
-  status?: string; // "pending" | "uploading" | "uploaded" | "failed"
-  uploadProgress?: number; // 0-100 (%)
-  uploadedUrl?: string; // URL sau khi upload thành công
-  file?: File; // File gốc để upload
-  uploadError?: any; // optional structured error info when upload failed
+  status?: string;
+  uploadProgress?: number;
+  uploadedUrl?: string;
+  file?: File;
+  uploadError?: any;
 };
 
 export interface RoomData {
@@ -160,12 +178,12 @@ export interface SendMessageArgs {
   roomId: string;
   content: string;
   attachments: FilePreview[];
-  type: "text" | "image" | "file" | "video";
+  type: "text" | "image" | "file" | "video" | "audio" | "flashcard" | "quiz" | "document" | "todo_project" | "call";
   replyTo?: string;
-  socket?: any; // Socket instance
-  userId?: string; // User ID
-  userFullname?: string; // User fullname
-  userAvatar?: string; // User avatar
+  socket?: any;
+  userId?: string;
+  userFullname?: string;
+  userAvatar?: string;
 }
 
 

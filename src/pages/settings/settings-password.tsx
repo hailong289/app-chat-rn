@@ -51,7 +51,7 @@ export default function SettingsPasswordPage() {
     }
 
     updatePassword({
-      currentPassword,
+      oldPassword: currentPassword,
       newPassword,
       callback: (err: { response?: { data?: { message?: string } } }) => {
         if (err) {

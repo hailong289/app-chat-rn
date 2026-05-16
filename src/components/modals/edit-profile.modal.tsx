@@ -14,6 +14,7 @@ import {
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import { Toast } from 'toastify-react-native';
 import useAuthStore from '@/src/store/useAuth';
+import { formatDateOfBirthForInput } from '@/src/libs/normalize-auth-user';
 
 interface EditProfileModalProps {
   visible: boolean;
@@ -45,10 +46,15 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({
       return;
     }
 
+    if (!user?.dateOfBirth) {
+      Toast.show({ type: 'error', text1: 'Thiếu ngày sinh trên hồ sơ. Vui lòng cập nhật trong Cài đặt tài khoản.' });
+      return;
+    }
+
     updateProfile({
-      fullname,
-      phone,
+      fullname: fullname.trim(),
       gender,
+      dateOfBirth: formatDateOfBirthForInput(user.dateOfBirth),
       callback: (error: any) => {
         if (error) {
           Toast.show({ type: 'error', text1: 'Cập nhật thất bại' });

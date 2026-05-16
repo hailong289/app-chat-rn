@@ -1,4 +1,4 @@
-import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword, PayloadVerifyOtp, UpdateProfilePayload } from "../types/auth.type";
+import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword, PayloadVerifyOtp, UpdatePasswordPayload, UpdateProfilePayload } from "../types/auth.type";
 import ApiResponse from "../types/response.type";
 import apiService from "./api.service";
 
@@ -71,8 +71,9 @@ export default class AuthService {
     }
 
     // ── Update Password ────────────────────────────────────────────────
-    public static async updatePassword(data: { currentPassword: string; newPassword: string }) {
-        return apiService.post<ApiResponse<any>>('/auth/update-password', data);
+    public static async updatePassword(data: UpdatePasswordPayload) {
+        const { callback: _callback, ...body } = data;
+        return apiService.post<ApiResponse<any>>('/auth/update-password', body);
     }
 
     // ── Search Users ──────────────────────────────────────────────────

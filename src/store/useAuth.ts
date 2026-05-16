@@ -9,10 +9,17 @@
 
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { AuthState, PayloadLogin, PayloadRegister, PayloadLogout, PayloadForgotPassword, PayloadVerifyOtp, PayloadResetPassword, AuthMetadata } from "../types/auth.type";
+import { AuthState, PayloadLogin, PayloadRegister, PayloadLogout, PayloadForgotPassword, PayloadVerifyOtp, PayloadResetPassword, AuthMetadata, UpdatePasswordPayload, UpdateProfilePayload, UpdateAvatarPayload } from "../types/auth.type";
 import { User } from "../types/user.type";
 import AuthService from "../service/auth.service";
-import { normalizeAuthUser } from "../libs/normalize-auth-user";
+import {
+  applyProfilePayloadToUser,
+  extractAuthUserRaw,
+  isValidAuthUserId,
+  mergeAuthUsers,
+  normalizeAuthUser,
+} from "../libs/normalize-auth-user";
+import { resolveMediaUrl } from "../libs/resolve-media-url";
 
 // ── Token Storage helpers (AsyncStorage) ─────────────────────────────
 const ACCESS_TOKEN_KEY = "accessToken";
@@ -82,10 +89,14 @@ const useAuthStore = create<AuthState>()(
         const metadata = response.data?.metadata as AuthMetadata;
         const accessToken = metadata?.accessToken || null;
         await tokenStorage.set(accessToken);
+        const loginUser = normalizeAuthUser(
+          extractAuthUserRaw(response.data) ??
+            (metadata?.user as Record<string, unknown> | undefined),
+        );
         set({
           isAuthenticated: true,
           isLoading: false,
-          user: metadata?.user || null,
+          user: loginUser,
           tokens: {
             accessToken,
             refreshToken: null,
@@ -112,10 +123,14 @@ const useAuthStore = create<AuthState>()(
         const metadata = response.data?.metadata as AuthMetadata;
         const accessToken = metadata?.accessToken || null;
         await tokenStorage.set(accessToken);
+        const registerUser = normalizeAuthUser(
+          extractAuthUserRaw(response.data) ??
+            (metadata?.user as Record<string, unknown> | undefined),
+        );
         set({
           isAuthenticated: true,
           isLoading: false,
-          user: metadata?.user || null,
+          user: registerUser,
           tokens: {
             accessToken,
             refreshToken: null,
@@ -161,34 +176,15 @@ const useAuthStore = create<AuthState>()(
     fetchMe: async () => {
       try {
         const response = await AuthService.getMe();
-        const data = response.data as
-          | {
-              metadata?: { user?: Record<string, unknown> } | Record<string, unknown>;
-              user?: Record<string, unknown>;
-            }
-          | undefined;
-
-        const rawUser =
-          (data?.metadata &&
-          typeof data.metadata === "object" &&
-          "user" in data.metadata
-            ? data.metadata.user
-            : undefined) ??
-          data?.user ??
-          (data?.metadata &&
-          typeof data.metadata === "object" &&
-          ("fullname" in data.metadata || "usr_fullname" in data.metadata)
-            ? data.metadata
-            : undefined);
-
-        const user = normalizeAuthUser(
-          rawUser as Record<string, unknown> | undefined,
-        );
-        if (user) {
-          set({ user, isAuthenticated: true });
+        const user = normalizeAuthUser(extractAuthUserRaw(response.data));
+        if (user && isValidAuthUserId(user)) {
+          set({
+            user: mergeAuthUsers(get().user, user) ?? user,
+            isAuthenticated: true,
+          });
           return user;
         }
-        console.warn("[fetchMe] no user in response", data);
+        console.warn("[fetchMe] no user in response", response.data);
         return null;
       } catch (err: any) {
         const status = err?.statusCode ?? err?.response?.status;
@@ -310,70 +306,57 @@ const useAuthStore = create<AuthState>()(
     },
 
     // ── Update Profile ─────────────────────────────────────────────
-    updateProfile: async (payload: any) => {
+    updateProfile: async (payload: UpdateProfilePayload) => {
+      const { callback, ...profileFields } = payload;
       set({ isLoading: true });
       try {
-        const response = await AuthService.updateProfile(payload);
-        const metadata = response.data?.metadata as any;
-        const rawUser = metadata?.user ?? metadata;
-        const normalized = normalizeAuthUser(
-          rawUser && typeof rawUser === "object" ? rawUser : undefined,
-        );
-        if (normalized) {
-          set({ user: normalized, isLoading: false });
-        } else {
+        await AuthService.updateProfile(payload);
+        try {
+          await get().fetchMe();
+        } catch {
           const currentUser = get().user;
           if (currentUser) {
-            set({
-              user: {
-                ...currentUser,
-                fullname: payload.fullname ?? currentUser.fullname,
-                gender: payload.gender ?? currentUser.gender,
-                dateOfBirth: payload.dateOfBirth ?? currentUser.dateOfBirth,
-                address: payload.address ?? currentUser.address,
-                email: payload.email ?? currentUser.email,
-                phone: payload.phone ?? currentUser.phone,
-              },
-              isLoading: false,
-            });
-          } else {
-            set({ isLoading: false });
+            set({ user: applyProfilePayloadToUser(currentUser, profileFields) });
           }
         }
-        payload.callback?.();
+        set({ isLoading: false });
+        callback?.();
       } catch (error) {
         set({ isLoading: false });
-        payload.callback?.(error);
+        callback?.(error);
       }
     },
 
     // ── Update Avatar ──────────────────────────────────────────────
-    updateAvatar: async (payload: any) => {
+    updateAvatar: async (payload: UpdateAvatarPayload) => {
+      const { callback } = payload;
       set({ isLoading: true });
       try {
         const response = await AuthService.updateAvatar(payload);
-        const metadata = response.data.metadata as any;
-        if (metadata?.user) {
-          set({ user: metadata.user, isLoading: false });
-        } else if (metadata?.url) {
+        const avatarUrl = (response.data?.metadata as { url?: string } | undefined)?.url;
+        try {
+          await get().fetchMe();
+        } catch {
           const currentUser = get().user;
-          if (currentUser) {
-            set({ user: { ...currentUser, avatar: metadata.url }, isLoading: false });
-          } else {
-            set({ isLoading: false });
+          if (currentUser && avatarUrl) {
+            set({
+              user: {
+                ...currentUser,
+                avatar: resolveMediaUrl(avatarUrl) ?? avatarUrl,
+              },
+            });
           }
-        } else {
-          set({ isLoading: false });
         }
-        payload.callback?.();
+        set({ isLoading: false });
+        callback?.();
       } catch (error) {
         set({ isLoading: false });
-        payload.callback?.(error);
+        callback?.(error);
       }
     },
 
     // ── Update Password ────────────────────────────────────────────
-    updatePassword: async (payload: any) => {
+    updatePassword: async (payload: UpdatePasswordPayload) => {
       set({ isLoading: true });
       try {
         await AuthService.updatePassword(payload);

@@ -73,7 +73,7 @@ export interface UpdateAvatarPayload {
 }
 
 export interface UpdatePasswordPayload {
-    currentPassword: string;
+    oldPassword: string;
     newPassword: string;
     callback?: (error?: any) => void;
 }

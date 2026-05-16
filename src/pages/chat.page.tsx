@@ -272,7 +272,7 @@ const ChatPage: React.FC = () => {
                 styles.listContent,
                 chatData.length === 0 && styles.listContentEmpty,
               ]}
-              removeClippedSubviews={Platform.OS === 'android'}
+              removeClippedSubviews={false}
               maxToRenderPerBatch={12}
               windowSize={9}
               initialNumToRender={18}
