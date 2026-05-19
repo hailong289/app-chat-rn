@@ -9,6 +9,9 @@ import FontAwesome from '@react-native-vector-icons/fontawesome';
 import useRoomStore from '@/src/store/useRoom';
 import { MainStackParamList } from '@/src/navigations/MainStackNavigator';
 import useContactStore from '@/src/store/useContact';
+import useCallStore from '@/src/store/useCallStore';
+import useAuthStore from '@/src/store/useAuth';
+import { useSocket } from '@/src/providers/socket.provider';
 import { resolveCanonicalRoomId } from '@/src/libs/normalize-socket-message';
 
 type HeaderChatProps = StackHeaderProps & {
@@ -20,6 +23,9 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
   const insets = useSafeAreaInsets();
   const { rooms, room: activeRoom } = useRoomStore();
   const { groups } = useContactStore();
+  const { openCall } = useCallStore();
+  const { user } = useAuthStore();
+  const { socket } = useSocket('/chat');
   const params = props.route.params as MainStackParamList['Chat'];
   const chatId = params?.roomId ? resolveCanonicalRoomId(params.roomId) : '';
   const room =
@@ -30,6 +36,29 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
     groups.find((g) => g.roomId === chatId || g.id === chatId) ||
     null;
   const backgroundColor = '#42A59F';
+
+  const handleStartCall = (mode: 'audio' | 'video') => {
+    if (!room?.roomId) return;
+    if (!user) {
+      console.warn('[handleStartCall] no user yet, skipping');
+      return;
+    }
+    const callMode = room.type !== 'private' ? 'sfu' : 'p2p';
+    openCall({
+      roomId: room.roomId,
+      mode,
+      members: (room.members || []).map((m: any) => ({
+        id: m.id,
+        fullname: m.name,
+        avatar: m.avatar,
+        is_caller: m.id === user.id,
+      })),
+      currentUser: user,
+      socket,
+      callMode,
+    });
+  };
+
   const statusBarStyle: StatusBarStyle = 'light-content';
   const height = 56;
   const showStatusBar = true;
@@ -106,6 +135,22 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
           {/* Right Section */}
           <Box className="flex-row items-center gap-2" style={{ minWidth: 40 }}>
             <TouchableOpacity
+              onPress={() => handleStartCall('audio')}
+              activeOpacity={0.7}
+              style={{ padding: 4 }}
+              accessibilityLabel="Gọi thoại"
+            >
+              <FontAwesome name="phone" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => handleStartCall('video')}
+              activeOpacity={0.7}
+              style={{ padding: 4 }}
+              accessibilityLabel="Gọi video"
+            >
+              <FontAwesome name="video-camera" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={onInfoPress}
               activeOpacity={0.7}
               style={{ padding: 4 }}
@@ -121,4 +166,3 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
 };
 
 export default HeaderChatComponent;
-

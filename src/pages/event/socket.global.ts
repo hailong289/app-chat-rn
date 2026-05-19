@@ -141,10 +141,28 @@ export const SocketEventGlobal = () => {
 
   const onCallEnd = useRef((data: any) => {
     void require('../../store/useCallStore').default.getState().eventCall('end', data);
+
+    const callId = data?.callId;
+    const roomId = data?.roomId;
+    const members = data?.history?.members ?? data?.members;
+    if (callId && roomId && Array.isArray(members)) {
+      useMessageStore.getState().patchCallMessage(roomId, callId, {
+        members,
+        ended_at: data?.history?.ended_at ?? null,
+      });
+    }
   });
 
   const onCallBusy = useRef((data: any) => {
     void require('../../store/useCallStore').default.getState().eventCall('busy', data);
+  });
+
+  const onCallCancelled = useRef((data: any) => {
+    void require('../../store/useCallStore').default.getState().eventCall('cancelled', data);
+  });
+
+  const onCallRejected = useRef((data: any) => {
+    void require('../../store/useCallStore').default.getState().eventCall('rejected', data);
   });
 
   useEffect(() => {
@@ -202,6 +220,8 @@ export const SocketEventGlobal = () => {
     callSocket.on(SocketEvents.CALL_ACCEPTED, onCallAccepted.current);
     callSocket.on(SocketEvents.CALL_END, onCallEnd.current);
     callSocket.on(SocketEvents.CALL_BUSY, onCallBusy.current);
+    callSocket.on('call:cancelled', onCallCancelled.current);
+    callSocket.on('call:rejected', onCallRejected.current);
 
     callSocket.emit('heartbeat');
     const callHeartbeat = setInterval(() => {
@@ -215,6 +235,8 @@ export const SocketEventGlobal = () => {
       callSocket.off(SocketEvents.CALL_ACCEPTED, onCallAccepted.current);
       callSocket.off(SocketEvents.CALL_END, onCallEnd.current);
       callSocket.off(SocketEvents.CALL_BUSY, onCallBusy.current);
+      callSocket.off('call:cancelled', onCallCancelled.current);
+      callSocket.off('call:rejected', onCallRejected.current);
     };
   }, [callSocket]);
 

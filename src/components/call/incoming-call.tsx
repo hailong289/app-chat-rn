@@ -71,7 +71,7 @@ function IncomingCallModal({ visible, payload }: Props) {
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      animationType="fade"
       statusBarTranslucent
     >
       <View style={styles.overlay}>
@@ -147,17 +147,19 @@ export default function IncomingCallOverlay() {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   card: {
+    flex: 1,
+    width: '100%',
     backgroundColor: '#1C1C2E',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 28,
+    paddingTop: 80,
     paddingBottom: 48,
     paddingHorizontal: 24,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   callTypeText: {
     color: '#AAB0BD',
@@ -170,17 +172,17 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   avatarContainer: {
-    marginVertical: 20,
+    marginVertical: 32,
     shadowColor: '#42A59F',
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    elevation: 8,
+    shadowOpacity: 0.6,
+    shadowRadius: 24,
+    elevation: 12,
   },
   avatar: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    borderWidth: 3,
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    borderWidth: 4,
     borderColor: '#42A59F',
   },
   avatarFallback: {
@@ -195,26 +197,27 @@ const styles = StyleSheet.create({
   },
   callerName: {
     color: '#fff',
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: '700',
     textAlign: 'center',
   },
   callingLabel: {
     color: '#AAB0BD',
-    fontSize: 14,
-    marginTop: 6,
-    marginBottom: 36,
+    fontSize: 16,
+    marginTop: 8,
+    marginBottom: 64,
   },
   actions: {
     flexDirection: 'row',
-    gap: 40,
+    gap: 60,
     justifyContent: 'center',
+    marginTop: 40,
   },
   actionBtn: {
     alignItems: 'center',
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     justifyContent: 'center',
   },
   acceptBtn: {

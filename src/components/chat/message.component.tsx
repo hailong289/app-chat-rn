@@ -290,7 +290,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
   // Call message — centered bubble
   if (item.type === 'call' && item.call_history && !item.isDeleted) {
     return (
-      <View className={`${messageSpacing} items-center px-4`}>
+      <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
         <CallBubble callHistory={item.call_history} isMine={item.isMine} />
         <Text className="text-xs text-gray-400 mt-1">
           {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}

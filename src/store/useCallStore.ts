@@ -137,7 +137,7 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
     openCall: (payload) => {
       const { roomId, mode, members, currentUser, socket, callMode = 'p2p' } =
         payload;
-
+ 
       if (!currentUser?.id) {
         console.warn('[openCall] missing currentUser, aborting');
         return;
@@ -161,6 +161,21 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         callId: null,
         incomingCall: null,
       });
+
+      // Emit call:request immediately so backend receives it without
+      // waiting for the Call screen navigation + updateCallState.
+      const requestPayload = {
+        actionUserId: currentUser?.id || '',
+        membersIds: memberMap.map((m: any) => m.id),
+        roomId,
+        callType: mode,
+      };
+      if (callMode === 'sfu') {
+        socket.emit('call:request', requestPayload);
+        socket?.emit('signal', { type: 'join', roomId, target: 'sfu' });
+      } else {
+        socket?.emit('call:request', requestPayload);
+      }
 
       navigateToCallScreen(_callNavigation, {
         roomId,
@@ -490,6 +505,17 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
 
         case 'end':
           get().handleEndCall(payload);
+          break;
+
+        case 'cancelled':
+          set({ incomingCall: null });
+          if (get().status === 'calling') {
+            set({ status: 'ended', roomId: null });
+          }
+          break;
+
+        case 'rejected':
+          set({ incomingCall: null });
           break;
 
         case 'candidate': {

@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
+import FontAwesome6 from '@react-native-vector-icons/fontawesome6';
 import useCallStore from '../../store/useCallStore';
 import useAuthStore from '../../store/useAuth';
 import Helpers from '../../libs/helpers';
@@ -30,30 +31,33 @@ export default function CallBubble({ callHistory, isMine }: CallBubbleProps) {
   let statusLabel = 'Cuộc gọi đã kết thúc';
   let statusColorClass = 'text-gray-500';
   let iconBgClass = 'bg-gray-100';
-  let iconTextClass = 'text-gray-500';
-  let icon = isVideoCall ? '🎥' : '📞';
+  let iconName = isVideoCall ? 'video' : 'phone';
+  let iconColor = '#6B7280';
 
   if (isPending) {
     statusLabel = 'Đang chờ...';
     statusColorClass = 'text-yellow-600';
     iconBgClass = 'bg-yellow-100';
-    iconTextClass = 'text-yellow-600';
+    iconName = isVideoCall ? 'video' : 'phone';
+    iconColor = '#CA8A04';
   } else if (isStarted) {
     statusLabel = 'Đang diễn ra';
     statusColorClass = 'text-green-600';
     iconBgClass = 'bg-green-100';
-    iconTextClass = 'text-green-600';
+    iconName = isVideoCall ? 'video' : 'phone';
+    iconColor = '#16A34A';
   } else if (['missed', 'rejected'].includes(myStatus || '')) {
     statusLabel = 'Cuộc gọi nhỡ';
     statusColorClass = 'text-red-600';
     iconBgClass = 'bg-red-100';
-    iconTextClass = 'text-red-600';
-    icon = '📵';
+    iconName = 'phone-slash';
+    iconColor = '#DC2626';
   } else if (myStatus === 'cancelled') {
     statusLabel = 'Đã hủy';
     statusColorClass = 'text-yellow-600';
     iconBgClass = 'bg-yellow-100';
-    iconTextClass = 'text-yellow-600';
+    iconName = isVideoCall ? 'video' : 'phone';
+    iconColor = '#CA8A04';
   }
 
   // ── Title ───────────────────────────────────────────────────────────
@@ -111,7 +115,7 @@ export default function CallBubble({ callHistory, isMine }: CallBubbleProps) {
       {/* Icon + Title */}
       <View className="flex-row items-center gap-3 mb-2">
         <View className={`p-2.5 rounded-full ${iconBgClass}`}>
-          <Text className={`text-lg ${iconTextClass}`}>{icon}</Text>
+          <FontAwesome6 name={iconName as any} iconStyle="solid" size={20} color={iconColor} />
         </View>
         <View className="flex-1 min-w-0">
           <Text className={`text-sm font-semibold ${titleColor}`} numberOfLines={1}>

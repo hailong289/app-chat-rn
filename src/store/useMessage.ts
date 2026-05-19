@@ -160,6 +160,12 @@ interface MessageState {
     togglePin: (roomId: string, messageId: string, pinned: boolean) => void;
     // Error handling
     upsetMsgError: (payload: { message: string; error: string; data: { roomId: string; id?: string; content: string } }) => void;
+    // Call
+    patchCallMessage: (
+      roomId: string,
+      callId: string,
+      patch: { members?: any[]; ended_at?: string | null },
+    ) => void;
 }
 
 const useMessageStore = create<MessageState>()(
@@ -769,6 +775,38 @@ const useMessageStore = create<MessageState>()(
         setAttachments: (roomId, attachments) => {
             const currentRoom = get().messagesRoom[roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
             set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, attachments } } });
+        },
+
+        // ── Patch Call Message ────────────────────────────────────────
+        patchCallMessage: (roomId, callId, patch) => {
+            const currentRoom = get().messagesRoom[roomId];
+            if (!currentRoom) return;
+
+            const msgs = currentRoom.messages;
+            const idx = msgs.findIndex(
+                (m) => m.type === 'call' && (m as any).call_history?.call_id === callId,
+            );
+            if (idx === -1) return;
+
+            const updatedMessages = msgs.map((msg, i) =>
+                i === idx
+                    ? {
+                          ...msg,
+                          call_history: {
+                              ...((msg as any).call_history ?? {}),
+                              ...(patch.members ? { members: patch.members } : {}),
+                              ...(patch.ended_at !== undefined ? { ended_at: patch.ended_at } : {}),
+                          },
+                      }
+                    : msg,
+            );
+
+            set({
+                messagesRoom: {
+                    ...get().messagesRoom,
+                    [roomId]: { ...currentRoom, messages: updatedMessages },
+                },
+            });
         },
     })
 );
