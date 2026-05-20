@@ -287,15 +287,66 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
     );
   }
 
-  // Call message — centered bubble
+  // Call message — bubble with avatar + reply preview
   if (item.type === 'call' && item.call_history && !item.isDeleted) {
     return (
-      <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
-        <CallBubble callHistory={item.call_history} isMine={item.isMine} />
-        <Text className="text-xs text-gray-400 mt-1">
-          {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}
-        </Text>
-      </View>
+      <TouchableWithoutFeedback onLongPress={handleLongPress}>
+        <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
+
+          {/* Reply preview */}
+          {!!item.reply?._id && (
+            <View className={`mb-1 max-w-[80%] ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
+              <ReplyPreview reply={item.reply} isMine={item.isMine} />
+            </View>
+          )}
+
+          <HStack className={`w-full items-end ${item.isMine ? 'justify-end' : 'justify-start'}`}>
+            {/* Avatar bên trái (tin người khác) */}
+            {!item.isMine && (
+              <Box className="mr-2 bg-transparent" style={{ paddingTop: 0 }}>
+                {item.showAvatar ? (
+                  <ImageAvatar
+                    src={item.sender.avatar}
+                    id={item.sender._id}
+                    size={24}
+                    style={{ width: 24, height: 24, borderRadius: 12 }}
+                  />
+                ) : (
+                  <View style={{ width: 24, height: 24 }} />
+                )}
+              </Box>
+            )}
+
+            <View
+              style={{
+                flexShrink: 1,
+                alignSelf: item.isMine ? 'flex-end' : 'flex-start',
+              }}
+            >
+              <CallBubble callHistory={item.call_history} isMine={item.isMine} />
+              <Text className="text-xs text-gray-400 mt-1">
+                {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}
+              </Text>
+            </View>
+
+            {/* Avatar bên phải (tin của mình) */}
+            {item.isMine && (
+              <Box className="ml-2 bg-transparent" style={{ paddingTop: 0 }}>
+                {item.showAvatar ? (
+                  <ImageAvatar
+                    src={item.sender.avatar}
+                    id={item.sender._id}
+                    size={24}
+                    style={{ width: 24, height: 24, borderRadius: 12 }}
+                  />
+                ) : (
+                  <View style={{ width: 24, height: 24 }} />
+                )}
+              </Box>
+            )}
+          </HStack>
+        </View>
+      </TouchableWithoutFeedback>
     );
   }
 
@@ -304,18 +355,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
     return (
       <View className={`${messageSpacing} items-center px-4`}>
         <View
-          className={`rounded-2xl p-3 border flex-row items-center gap-3 max-w-[280px] ${
-            item.isMine
-              ? 'bg-primary-500/10 border-primary-500/20'
-              : 'bg-gray-100 border-gray-200'
-          }`}
+          className={`rounded-2xl p-3 border flex-row items-center gap-3 max-w-[280px] ${item.isMine
+            ? 'bg-primary-500/10 border-primary-500/20'
+            : 'bg-gray-100 border-gray-200'
+            }`}
         >
           <View
-            className={`p-2.5 rounded-lg ${
-              item.isMine
-                ? 'bg-primary-500/20'
-                : 'bg-gray-200'
-            }`}
+            className={`p-2.5 rounded-lg ${item.isMine
+              ? 'bg-primary-500/20'
+              : 'bg-gray-200'
+              }`}
           >
             <Text className={`text-lg ${item.isMine ? 'text-primary-600' : 'text-gray-600'}`}>
               📄
@@ -323,17 +372,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
           </View>
           <View className="flex-1 min-w-0">
             <Text
-              className={`text-sm font-semibold ${
-                item.isMine ? 'text-primary-900' : 'text-typography-950'
-              }`}
+              className={`text-sm font-semibold ${item.isMine ? 'text-primary-900' : 'text-typography-950'
+                }`}
               numberOfLines={1}
             >
               {item.content || 'Tài liệu'}
             </Text>
             <Text
-              className={`text-xs ${
-                item.isMine ? 'text-primary-700/70' : 'text-typography-500'
-              }`}
+              className={`text-xs ${item.isMine ? 'text-primary-700/70' : 'text-typography-500'
+                }`}
             >
               Nhấn để mở
             </Text>
@@ -363,16 +410,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
           />
         ) : (
           <View
-            className={`rounded-2xl p-4 border max-w-[280px] ${
-              item.isMine
-                ? 'bg-primary-500/10 border-primary-500/20'
-                : 'bg-gray-100 border-gray-200'
-            }`}
+            className={`rounded-2xl p-4 border max-w-[280px] ${item.isMine
+              ? 'bg-primary-500/10 border-primary-500/20'
+              : 'bg-gray-100 border-gray-200'
+              }`}
           >
             <Text
-              className={`text-sm ${
-                item.isMine ? 'text-primary-900' : 'text-typography-950'
-              }`}
+              className={`text-sm ${item.isMine ? 'text-primary-900' : 'text-typography-950'
+                }`}
             >
               {item.content}
             </Text>
@@ -390,9 +435,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
       <TouchableWithoutFeedback onLongPress={handleLongPress}>
         <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
           {/* Reply preview */}
-          {item.reply && (
-            <View className="mb-1 ml-8 max-w-[80%]">
-              <ReplyPreview reply={item.reply} />
+          {!!item.reply?._id && (
+            <View className={`mb-1 max-w-[80%] ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
+              <ReplyPreview reply={item.reply} isMine={item.isMine} />
             </View>
           )}
 
@@ -518,23 +563,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                   {/* Translation display */}
                   {!!item.translation?.text && (
                     <View
-                      className={`mt-2 rounded-lg px-3 py-2 ${
-                        item.isMine
-                          ? 'bg-white/15'
-                          : 'bg-gray-100'
-                      }`}
+                      className={`mt-2 rounded-lg px-3 py-2 ${item.isMine
+                        ? 'bg-white/15'
+                        : 'bg-gray-100'
+                        }`}
                     >
                       <Text
-                        className={`text-xs font-semibold mb-1 ${
-                          item.isMine ? 'text-white/90' : 'text-typography-700'
-                        }`}
+                        className={`text-xs font-semibold mb-1 ${item.isMine ? 'text-white/90' : 'text-typography-700'
+                          }`}
                       >
                         Đã dịch ({item.translation.from || 'auto'} → {item.translation.to})
                       </Text>
                       <Text
-                        className={`text-xs leading-relaxed ${
-                          item.isMine ? 'text-white/80' : 'text-typography-950'
-                        }`}
+                        className={`text-xs leading-relaxed ${item.isMine ? 'text-white/80' : 'text-typography-950'
+                          }`}
                       >
                         {item.translation.text}
                       </Text>
@@ -543,23 +585,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                   {/* Summary display */}
                   {!!item.summary?.text && (
                     <View
-                      className={`mt-2 rounded-lg border px-3 py-2 ${
-                        item.isMine
-                          ? 'bg-primary-500/10 border-primary-500/30'
-                          : 'bg-gray-50 border-gray-200'
-                      }`}
+                      className={`mt-2 rounded-lg border px-3 py-2 ${item.isMine
+                        ? 'bg-primary-500/10 border-primary-500/30'
+                        : 'bg-gray-50 border-gray-200'
+                        }`}
                     >
                       <Text
-                        className={`text-xs font-semibold mb-1 ${
-                          item.isMine ? 'text-primary-900' : 'text-typography-700'
-                        }`}
+                        className={`text-xs font-semibold mb-1 ${item.isMine ? 'text-primary-900' : 'text-typography-700'
+                          }`}
                       >
                         Tóm tắt tài liệu
                       </Text>
                       <Text
-                        className={`text-xs leading-relaxed ${
-                          item.isMine ? 'text-primary-800' : 'text-typography-800'
-                        }`}
+                        className={`text-xs leading-relaxed ${item.isMine ? 'text-primary-800' : 'text-typography-800'
+                          }`}
                       >
                         {item.summary.text}
                       </Text>
