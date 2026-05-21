@@ -1,31 +1,41 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import FontAwesome from '@react-native-vector-icons/fontawesome';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
+  Linking,
+  Modal,
+  ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  Modal,
-  StyleSheet,
-  ScrollView,
-  Image,
-  FlatList,
-  Alert,
-  ActivityIndicator,
-  Dimensions,
-  Linking,
+  View
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
-  useSharedValue,
   useAnimatedStyle,
+  useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
-import FontAwesome from '@react-native-vector-icons/fontawesome';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import useRoomStore from '../../store/useRoom';
-import useAuthStore from '../../store/useAuth';
+import { useSocket } from '../../providers/socket.provider';
+import QuizzService from '../../service/quizz.service';
 import UploadService from '../../service/upload.service';
-import type { Room, RoomMembers } from '../../types/room.type';
+import useAuthStore from '../../store/useAuth';
+import useMessageStore from '../../store/useMessage';
+import useRoomStore from '../../store/useRoom';
+import type { QuizzResponse } from '../../types/quizz.type';
+import type { RoomMembers } from '../../types/room.type';
+import { getQuizApiId, getRoomMongoId } from '../../libs/helpers';
+import { resolveCanonicalRoomId } from '../../libs/normalize-socket-message';
+import CreateQuizzModal from '../modals/CreateQuizzModal';
+import EditQuizzModal from '../modals/EditQuizzModal';
+import QuizResults from '../modals/QuizResults';
+import TakeQuizzModal from '../modals/TakeQuizzModal';
 import { ImageViewerModal } from './image-viewer-modal.component';
+import QuizList from './quiz-list';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const DRAWER_WIDTH = Math.min(SCREEN_W * 0.85, 400);
@@ -46,9 +56,34 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   onScrollToMessage,
 }) => {
   const insets = useSafeAreaInsets();
-  const { room, leaveRoom, changeRoomName, deleteMember, addMembers, clearHistory } =
-    useRoomStore();
+  const {
+    room: storeRoom,
+    rooms,
+    leaveRoom,
+    changeRoomName,
+    deleteMember,
+    addMembers,
+    clearHistory,
+    getRoomDetail,
+  } = useRoomStore();
   const { user } = useAuthStore();
+
+  // Resolve room: prefer store.room when it matches roomId, otherwise
+  // fall back to the rooms list (loaded from SQLite). This avoids null
+  // when getRoomDetail hasn't resolved yet or store.room is a different room.
+  const room = React.useMemo(() => {
+    if (storeRoom && (storeRoom.id === roomId || storeRoom.roomId === roomId)) {
+      return storeRoom;
+    }
+    return rooms.find((r) => r.id === roomId || r.roomId === roomId) ?? storeRoom ?? null;
+  }, [storeRoom, rooms, roomId]);
+
+  // Ensure we always have fresh room detail when drawer opens
+  useEffect(() => {
+    if (visible && roomId) {
+      getRoomDetail(roomId);
+    }
+  }, [visible, roomId]);
 
   const [activeTab, setActiveTab] = useState<DrawerTab>('media');
   const [files, setFiles] = useState<any[]>([]);
@@ -67,7 +102,19 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     members: true,
     media: false,
     privacy: false,
+    quiz: false,
   });
+
+  // Quiz modal state
+  const [openCreateQuizModal, setOpenCreateQuizModal] = useState(false);
+  const [selectedQuiz, setSelectedQuiz] = useState<QuizzResponse | null>(null);
+  const [takeQuizModalVisible, setTakeQuizModalVisible] = useState(false);
+  const [resultsModalVisible, setResultsModalVisible] = useState(false);
+  const [editQuizModalVisible, setEditQuizModalVisible] = useState(false);
+  const [refreshQuizList, setRefreshQuizList] = useState(false);
+
+  const { socket } = useSocket('/chat');
+  const { updateQuizInMessages, sendMessage } = useMessageStore();
 
   const translateX = useSharedValue(DRAWER_WIDTH);
   const drawerStyle = useAnimatedStyle(() => ({
@@ -81,7 +128,27 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
     } else {
       translateX.value = withTiming(DRAWER_WIDTH, { duration: 220 });
     }
+    console.log('room', room);
   }, [visible, activeTab]);
+
+  // Socket listener for quiz updates
+  useEffect(() => {
+    if (!socket) return;
+    const handleQuizUpdate = (data: any) => {
+      // data: { roomId, quizId, payload }
+      const updatedQuiz = data?.payload || data?.quiz || data;
+      const quizId = data?.quizId || updatedQuiz?._id || updatedQuiz?.id;
+      if (quizId) {
+        const canonicalRoomId = resolveCanonicalRoomId(data?.roomId || room?.roomId || room?.id || '');
+        if (canonicalRoomId) updateQuizInMessages(canonicalRoomId, String(quizId), updatedQuiz);
+      }
+      setRefreshQuizList(prev => !prev);
+    };
+    socket.on('update:quiz', handleQuizUpdate);
+    return () => {
+      socket.off('update:quiz', handleQuizUpdate);
+    };
+  }, [socket, room?._id, updateQuizInMessages]);
 
   const fetchFiles = useCallback(
     async (p: number, tab: DrawerTab) => {
@@ -126,7 +193,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
   };
 
   const isAdmin = room?.members?.some(
-    m => m.id === user?.id && m.role === 'admin',
+    m => m.id === user?._id && m.role === 'admin',
   );
   const isGroup = room?.type === 'group' || room?.type === 'channel';
 
@@ -304,7 +371,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
                               : 'Thành viên'}
                           </Text>
                         </View>
-                        {isAdmin && member.id !== user?.id && (
+                        {isAdmin && member.id !== user?._id && (
                           <TouchableOpacity
                             onPress={() => handleRemoveMember(member as RoomMembers)}
                             style={styles.removeMemberBtn}
@@ -455,6 +522,62 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
               </View>
             )}
 
+            {/* ── Quiz section ────────────────────────────────────────── */}
+            <SectionHeader title="Quizz" sectionKey="quiz" />
+            {sectionsOpen.quiz && (
+              <View style={styles.sectionBody}>
+                <TouchableOpacity
+                  style={styles.createQuizButton}
+                  onPress={() => setOpenCreateQuizModal(true)}
+                >
+                  <FontAwesome name="plus" size={13} color="#fff" style={{ marginRight: 6 }} />
+                  <Text style={styles.createQuizButtonText}>Tạo quizz</Text>
+                </TouchableOpacity>
+                <QuizList
+                  roomId={getRoomMongoId(room)}
+                  user={user}
+                  onSendQuiz={(quiz) => {
+                    if (!room || !user) return;
+                    const canonicalRoomId = resolveCanonicalRoomId(room.roomId || room.id || roomId);
+                    sendMessage({
+                      roomId: canonicalRoomId,
+                      type: 'quiz',
+                      content: quiz.quiz_title,
+                      attachments: [],
+                      quiz,
+                      socket,
+                      userId: user._id || user.id,
+                      userFullname: user.fullname,
+                      userAvatar: user.avatar,
+                    });
+                    onClose();
+                  }}
+                  onCreatePress={() => setOpenCreateQuizModal(true)}
+                  onTakeQuiz={(quiz) => {
+                    setSelectedQuiz(quiz);
+                    setTakeQuizModalVisible(true);
+                  }}
+                  onResultsPress={(quiz) => {
+                    setSelectedQuiz(quiz);
+                    setResultsModalVisible(true);
+                  }}
+                  onEditPress={(quiz) => {
+                    setSelectedQuiz(quiz);
+                    setEditQuizModalVisible(true);
+                  }}
+                  onDeletePress={async (quiz) => {
+                    try {
+                      await QuizzService.deleteQuizz(getQuizApiId(quiz));
+                      setRefreshQuizList(prev => !prev);
+                    } catch {
+                      Alert.alert('Lỗi', 'Không thể xóa quiz');
+                    }
+                  }}
+                  refreshTrigger={refreshQuizList}
+                />
+              </View>
+            )}
+
             <View style={{ height: 32 }} />
           </ScrollView>
         </Animated.View>
@@ -467,6 +590,60 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
         initialIndex={previewIndex}
         onClose={() => setPreviewVisible(false)}
       />
+
+      {/* Create Quiz Modal */}
+      <CreateQuizzModal
+        isOpen={openCreateQuizModal}
+        onClose={() => {
+          setOpenCreateQuizModal(false);
+          setRefreshQuizList(prev => !prev);
+        }}
+        roomId={getRoomMongoId(room)}
+        userId={user?._id}
+      />
+
+      {/* Take Quiz Modal */}
+      {selectedQuiz && (
+        <TakeQuizzModal
+          isOpen={takeQuizModalVisible}
+          onClose={() => setTakeQuizModalVisible(false)}
+          quiz={selectedQuiz}
+          userId={user?._id || ''}
+          userFullname={user?.fullname || ''}
+          userAvatar={user?.avatar}
+          roomId={resolveCanonicalRoomId(room?.roomId || room?.id || roomId)}
+          onSubmitted={(updated) => {
+            setSelectedQuiz(updated);
+            setRefreshQuizList((prev) => !prev);
+          }}
+        />
+      )}
+
+      {/* Quiz Results Modal */}
+      {selectedQuiz && (
+        <QuizResults
+          isOpen={resultsModalVisible}
+          onClose={() => setResultsModalVisible(false)}
+          quiz={selectedQuiz}
+          userId={user?._id || ''}
+        />
+      )}
+
+      {/* Edit Quiz Modal */}
+      {selectedQuiz && (
+        <EditQuizzModal
+          isOpen={editQuizModalVisible}
+          onClose={() => setEditQuizModalVisible(false)}
+          quiz={selectedQuiz}
+          roomId={resolveCanonicalRoomId(room?.roomId || room?.id || roomId)}
+          onUpdated={(updated) => {
+            const quizId = updated._id || updated.id || updated.quiz_id || '';
+            const canonicalRoomId = resolveCanonicalRoomId(room?.roomId || room?.id || roomId);
+            if (quizId && canonicalRoomId) updateQuizInMessages(canonicalRoomId, quizId, updated);
+            setRefreshQuizList(prev => !prev);
+          }}
+        />
+      )}
     </>
   );
 };
@@ -708,6 +885,21 @@ const styles = StyleSheet.create({
   loadMoreText: {
     fontSize: 13,
     color: '#6366f1',
+    fontWeight: '600',
+  },
+  createQuizButton: {
+    flexDirection: 'row',
+    backgroundColor: '#42A59F',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  createQuizButtonText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '600',
   },
 });

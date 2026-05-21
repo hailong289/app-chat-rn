@@ -36,6 +36,16 @@ interface RoomState {
     // ── Socket sync ──
     updateRoomLastMessage: (roomId: string, lastMessage: any) => void;
     updateRoomUnreadCount: (roomId: string, count: number) => void;
+    fetchAndUpdateRoom: (roomId: string) => Promise<void>;
+    updateRoomSocket: (data: Room) => void;
+    setRoomReaded: (data: { lastMessageId: string; roomId: string }) => Promise<void>;
+    markMessageAsRead: (roomId: string, messageId: string, socket: any) => void;
+    roomDeleteSocket: (data: { roomId: string }) => void;
+    roomTypingSocket: (data: { isTyping: boolean; socket: any }) => void;
+    handleTypingEvent: (data: { userId: string; fullname: string; typing: boolean; roomId: string }) => void;
+    updateBlockStatus: (roomId: string, isBlocked: boolean, blockByMine: boolean) => void;
+    updatePinnedMessageFromSocket: (roomId: string, msg: { id: string; content: string; type?: string; pinned: boolean }) => void;
+    getRoomByRoomId: (roomId: string) => Room | undefined;
 }
 
 const useRoomStore = create<RoomState>()(
@@ -318,6 +328,165 @@ const useRoomStore = create<RoomState>()(
                         : r
                 ),
             }));
+        },
+
+        // ── Fetch & update room from API (socket-triggered refresh) ────
+        fetchAndUpdateRoom: async (roomId: string) => {
+            try {
+                const response = await RoomService.getRoomDetail(roomId);
+                const room = response.data?.metadata as Room;
+                if (room) {
+                    get().updateRoomSocket(room);
+                }
+            } catch {}
+        },
+
+        // ── Full socket room upsert (mirrors web updateRoomSocket) ─────
+        updateRoomSocket: (data: Room) => {
+            const sortRooms = (rooms: Room[]) =>
+                [...rooms].sort((a, b) => {
+                    if (a.pinned && !b.pinned) return -1;
+                    if (!a.pinned && b.pinned) return 1;
+                    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+                });
+
+            set((state) => {
+                const exists = state.rooms.some((r) => r.id === data.id || r.roomId === data.roomId);
+                const updatedRooms = exists
+                    ? state.rooms.map((r) => (r.id === data.id || r.roomId === data.roomId ? data : r))
+                    : [data, ...state.rooms];
+                return {
+                    rooms: sortRooms(updatedRooms),
+                    room: state.room?.id === data.id || state.room?.roomId === data.roomId
+                        ? data
+                        : state.room,
+                };
+            });
+
+            // Persist to SQLite fire-and-forget
+            Rooms.upsert(data).catch(() => {});
+        },
+
+        // ── Mark room as read (state + SQLite) ────────────────────────
+        setRoomReaded: async ({ lastMessageId, roomId }) => {
+            try {
+                await Rooms.getInstance()
+                    .getQuery()
+                    .where('id', '=', roomId)
+                    .update({ last_read_id: lastMessageId, is_read: 1, unread_count: 0 });
+            } catch {}
+
+            set((state) => ({
+                rooms: state.rooms.map((r) =>
+                    r.id === roomId || r.roomId === roomId
+                        ? { ...r, last_read_id: lastMessageId, is_read: true, unread_count: 0 }
+                        : r,
+                ),
+                room:
+                    state.room?.id === roomId || state.room?.roomId === roomId
+                        ? { ...state.room, last_read_id: lastMessageId, is_read: true, unread_count: 0 }
+                        : state.room,
+            }));
+        },
+
+        // ── Emit mark:read socket + update local state ─────────────────
+        markMessageAsRead: (roomId, messageId, socket) => {
+            socket?.emit('mark:read', { roomId, lastMessageId: messageId });
+            get().setRoomReaded({ lastMessageId: messageId, roomId });
+        },
+
+        // ── Socket: room deleted ──────────────────────────────────────
+        roomDeleteSocket: ({ roomId }) => {
+            set((state) => ({
+                rooms: state.rooms.filter((r) => r.id !== roomId && r.roomId !== roomId),
+                room:
+                    state.room?.id === roomId || state.room?.roomId === roomId
+                        ? null
+                        : state.room,
+            }));
+            get().removeRoom(roomId);
+        },
+
+        // ── Emit typing event via socket ──────────────────────────────
+        roomTypingSocket: ({ isTyping, socket }) => {
+            const roomId = get().room?.roomId || get().room?.id;
+            if (!roomId) return;
+            socket?.emit('user:typing', { roomId, typing: isTyping });
+        },
+
+        // ── Handle incoming typing event ──────────────────────────────
+        handleTypingEvent: ({ userId, fullname, typing, roomId }) => {
+            set((state) => {
+                const current = state.typingUsers[roomId] || [];
+                let updated: typeof current;
+                if (typing) {
+                    updated = current.some((u) => u.userId === userId)
+                        ? current
+                        : [...current, { userId, fullname }];
+                } else {
+                    updated = current.filter((u) => u.userId !== userId);
+                }
+                return { typingUsers: { ...state.typingUsers, [roomId]: updated } };
+            });
+        },
+
+        // ── Update block status (state + SQLite) ─────────────────────
+        updateBlockStatus: (roomId, isBlocked, blockByMine) => {
+            set((state) => ({
+                rooms: state.rooms.map((r) =>
+                    r.id === roomId || r.roomId === roomId
+                        ? { ...r, isBlocked, blockByMine }
+                        : r,
+                ),
+                room:
+                    state.room?.id === roomId || state.room?.roomId === roomId
+                        ? { ...state.room, isBlocked, blockByMine }
+                        : state.room,
+            }));
+            Rooms.getInstance()
+                .getQuery()
+                .where('id', '=', roomId)
+                .update({ isBlocked: isBlocked ? 1 : 0, blockByMine: blockByMine ? 1 : 0 })
+                .catch(() => {});
+        },
+
+        // ── Update pinned messages from socket ────────────────────────
+        updatePinnedMessageFromSocket: (roomId, msg) => {
+            set((state) => {
+                const target = state.rooms.find((r) => r.id === roomId || r.roomId === roomId);
+                if (!target) return state;
+
+                const pinned = target.pinned_messages || [];
+                const exists = pinned.some((pm) => pm.id === msg.id);
+                let updatedPinned: typeof pinned;
+
+                if (msg.pinned && !exists) {
+                    updatedPinned = [...pinned, { id: msg.id, content: msg.content, type: msg.type || 'text' }];
+                } else if (!msg.pinned && exists) {
+                    updatedPinned = pinned.filter((pm) => pm.id !== msg.id);
+                } else {
+                    return state;
+                }
+
+                const patch = { pinned_messages: updatedPinned, pinned_count: updatedPinned.length };
+                const updatedRooms = state.rooms.map((r) =>
+                    r.id === target.id || r.roomId === roomId ? { ...r, ...patch } : r,
+                );
+                const updatedRoom =
+                    state.room?.id === target.id || state.room?.roomId === roomId
+                        ? { ...state.room, ...patch }
+                        : state.room;
+
+                // Persist fire-and-forget
+                Rooms.upsert({ ...target, ...patch }).catch(() => {});
+
+                return { rooms: updatedRooms, room: updatedRoom };
+            });
+        },
+
+        // ── Get room from current list by id / roomId ─────────────────
+        getRoomByRoomId: (roomId) => {
+            return get().rooms.find((r) => r.id === roomId || r.roomId === roomId);
         },
     })
 );

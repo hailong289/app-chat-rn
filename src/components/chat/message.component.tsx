@@ -28,6 +28,7 @@ import CallBubble from './call-bubble';
 import { MessageReactions } from './message-reactions';
 import LinkPreview from './LinkPreview';
 import TodoProjectCard from './todo-project-card';
+import QuizMessageCard from './quiz-message-card';
 import {
   MAX_MESSAGE_LENGTH,
   MESSAGE_BUBBLE_MAX_WIDTH,
@@ -205,31 +206,60 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
 
   const handleReact = useCallback(
     (emoji: string) => {
-      const { addReaction } = useMessageStore.getState();
+      const store = useMessageStore.getState();
       const userId = user?._id || user?.id || '';
-      addReaction(item.roomId, item.id, emoji, userId);
-      socket?.emit('message:emoji', { messageId: item.id, roomId: item.roomId, emoji });
+      // Optimistic toggle: add or remove based on current state
+      const hasReacted = (item.reactions || []).some(
+        (r: any) => r.emoji === emoji && (r.users || []).some((u: any) => u._id === userId || u.usr_id === userId),
+      );
+      if (hasReacted) {
+        store.removeReaction(item.roomId, item.id, emoji, userId);
+      } else {
+        store.addReaction(item.roomId, item.id, emoji, userId);
+      }
+      const original = JSON.parse(JSON.stringify(item));
+      socket?.emit('message:emoji', { messageId: item.id, roomId: item.roomId, emoji }, (ack: any) => {
+        if (!ack || ack?.ok === false) {
+          // Rollback: restore original message state
+          useMessageStore.getState().upsetMsg(original);
+        }
+      });
     },
-    [socket, item.id, item.roomId, user],
+    [socket, item.id, item.roomId, user, item.reactions],
   );
 
   const handleDelete = useCallback(() => {
+    const original = JSON.parse(JSON.stringify(item));
     const { deleteMessage } = useMessageStore.getState();
     deleteMessage(item.roomId, item.id);
-    socket?.emit('message:delete', { messageId: item.id, roomId: item.roomId });
+    socket?.emit('message:delete', { messageId: item.id, roomId: item.roomId }, (ack: any) => {
+      if (!ack || ack?.ok === false) {
+        useMessageStore.getState().upsetMsg(original);
+      }
+    });
   }, [socket, item.id, item.roomId]);
 
   const handleRecall = useCallback(() => {
+    const original = JSON.parse(JSON.stringify(item));
     const { recallMessage } = useMessageStore.getState();
     recallMessage(item.roomId, item.id);
-    socket?.emit('message:recall', { messageId: item.id, roomId: item.roomId });
+    socket?.emit('message:recall', { messageId: item.id, roomId: item.roomId }, (ack: any) => {
+      if (!ack || ack?.ok === false) {
+        useMessageStore.getState().upsetMsg(original);
+      }
+    });
   }, [socket, item.id, item.roomId]);
 
   const handlePin = useCallback(() => {
     const newPinned = !item.pinned;
+    const original = JSON.parse(JSON.stringify(item));
     const { togglePin } = useMessageStore.getState();
     togglePin(item.roomId, item.id, newPinned);
-    socket?.emit('message:pinned', { messageId: item.id, roomId: item.roomId, pinned: newPinned });
+    socket?.emit('message:pinned', { messageId: item.id, roomId: item.roomId, pinned: newPinned }, (ack: any) => {
+      if (!ack || ack?.ok === false) {
+        useMessageStore.getState().upsetMsg(original);
+      }
+    });
   }, [socket, item.id, item.roomId, item.pinned]);
 
   const showTimestamp = item.showAvatar;
@@ -279,7 +309,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
   if (item.type === 'quiz' && (item as any).quiz && !item.isDeleted) {
     return (
       <View className={`${messageSpacing} items-center px-4`}>
-        {/* QuizCard imported dynamically */}
+        <QuizMessageCard
+          quiz={(item as any).quiz}
+          isSender={item.isMine}
+          roomId={item.roomId}
+        />
         <Text className="text-xs text-gray-400 mt-1">
           {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}
         </Text>
@@ -294,7 +328,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
         <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
 
           {/* Reply preview */}
-          {!!item.reply?._id && (
+          {!!item.reply && !!(item.reply._id || (item.reply as any).id) && (
             <View className={`mb-1 max-w-[80%] ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
               <ReplyPreview reply={item.reply} isMine={item.isMine} />
             </View>
@@ -435,7 +469,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
       <TouchableWithoutFeedback onLongPress={handleLongPress}>
         <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
           {/* Reply preview */}
-          {!!item.reply?._id && (
+          {!!item.reply && !!(item.reply._id || (item.reply as any).id) && (
             <View className={`mb-1 max-w-[80%] ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
               <ReplyPreview reply={item.reply} isMine={item.isMine} />
             </View>

@@ -14,6 +14,10 @@ import { launchImageLibrary } from "react-native-image-picker";
 import QuizzService from "../../service/quizz.service";
 import { QuizzQuestion, QuizzResponse, QuizzType } from "../../types/quizz.type";
 import QuizQuestionsList from "./QuizQuestionsList";
+import QuizDateTimeField, {
+  getDefaultQuizEndTime,
+  getDefaultQuizStartTime,
+} from "../ui/quiz-datetime-field";
 
 interface CreateQuizzModalProps {
   isOpen: boolean;
@@ -39,8 +43,8 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
   const [questions, setQuestions] = useState<QuizzQuestion[]>([]);
   const [quizTitle, setQuizTitle] = useState("");
   const [quizDesc, setQuizDesc] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [endTime, setEndTime] = useState<Date | null>(null);
   const [allowRetake, setAllowRetake] = useState(false);
   const [maxAttempts, setMaxAttempts] = useState("1");
   const [isSaving, setIsSaving] = useState(false);
@@ -56,8 +60,8 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
     setQuestions([]);
     setQuizTitle("");
     setQuizDesc("");
-    setStartTime("");
-    setEndTime("");
+    setStartTime(null);
+    setEndTime(null);
     setAllowRetake(false);
     setMaxAttempts("1");
   };
@@ -95,7 +99,6 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
     setGenProgress("Đang tạo quiz...");
     try {
       const payload: any = {
-        type: "document",
         question_type: questionType,
         question_max_points: parseInt(totalScore) || 10,
         question_max: parseInt(numberOfQuestions) || 5,
@@ -103,6 +106,7 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
 
       if (inputType === "text") {
         payload.text = textContent.trim();
+        payload.type = "text";
       } else if (fileAsset) {
         const form = new FormData();
         form.append("file", { uri: fileAsset.uri, name: fileAsset.name, type: fileAsset.type } as any);
@@ -115,8 +119,11 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
         });
         const generatedQuestions = result.data?.metadata?.quiz_questions || [];
         setQuestions(generatedQuestions);
-        setQuizTitle("");
-        setQuizDesc("");
+        setQuizTitle(result.data?.metadata?.quiz_title || "");
+        setQuizDesc(result.data?.metadata?.quiz_description || "");
+        const defaultStart = getDefaultQuizStartTime();
+        setStartTime(defaultStart);
+        setEndTime(getDefaultQuizEndTime(defaultStart));
         setPhase("preview");
         setIsGenerating(false);
         return;
@@ -127,8 +134,11 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
       });
       const generatedQuestions = result.data?.metadata?.quiz_questions || [];
       setQuestions(generatedQuestions);
-      setQuizTitle("");
-      setQuizDesc("");
+      setQuizTitle(result.data?.metadata?.quiz_title || "");
+      setQuizDesc(result.data?.metadata?.quiz_description || "");
+      const defaultStart = getDefaultQuizStartTime();
+      setStartTime(defaultStart);
+      setEndTime(getDefaultQuizEndTime(defaultStart));
       setPhase("preview");
     } catch (e: any) {
       Alert.alert("Lỗi", e?.message || "Tạo quiz thất bại");
@@ -147,7 +157,7 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
       Alert.alert("Lỗi", "Quiz cần ít nhất 1 câu hỏi");
       return;
     }
-    if (startTime && endTime && new Date(startTime) >= new Date(endTime)) {
+    if (startTime && endTime && startTime >= endTime) {
       Alert.alert("Lỗi", "Thời gian bắt đầu phải trước thời gian kết thúc");
       return;
     }
@@ -161,12 +171,12 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
       await QuizzService.createQuizz({
         quiz_title: quizTitle.trim(),
         quiz_description: quizDesc.trim(),
-        quiz_status: "active",
+        quiz_status: "draft",
         quiz_roomId: roomId,
         quiz_createdBy: userId,
         quiz_questions: questions,
-        quiz_startTime: startTime || undefined,
-        quiz_endTime: endTime || undefined,
+        quiz_startTime: startTime?.toISOString(),
+        quiz_endTime: endTime?.toISOString(),
         quiz_allowRetake: allowRetake,
         quiz_maxAttempts: allowRetake ? parseInt(maxAttempts) || 1 : undefined,
       });
@@ -325,27 +335,27 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
                 multiline
               />
 
-              <View className="flex-row gap-4 mb-3">
-                <View className="flex-1">
-                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Bắt đầu</Text>
-                  <TextInput
-                    className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white"
-                    placeholder="YYYY-MM-DD HH:mm"
-                    placeholderTextColor="#9CA3AF"
-                    value={startTime}
-                    onChangeText={setStartTime}
-                  />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kết thúc</Text>
-                  <TextInput
-                    className="border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm text-gray-900 dark:text-white"
-                    placeholder="YYYY-MM-DD HH:mm"
-                    placeholderTextColor="#9CA3AF"
-                    value={endTime}
-                    onChangeText={setEndTime}
-                  />
-                </View>
+              <View className="flex-row gap-3 mb-3">
+                <QuizDateTimeField
+                  label="Bắt đầu"
+                  value={startTime}
+                  onChange={(date) => {
+                    setStartTime(date);
+                    if (date && endTime && endTime <= date) {
+                      setEndTime(getDefaultQuizEndTime(date));
+                    }
+                  }}
+                  placeholder="Chọn thời gian bắt đầu"
+                  compact
+                />
+                <QuizDateTimeField
+                  label="Kết thúc"
+                  value={endTime}
+                  onChange={setEndTime}
+                  minimumDate={startTime ?? undefined}
+                  placeholder="Chọn thời gian kết thúc"
+                  compact
+                />
               </View>
 
               <View className="flex-row items-center justify-between mb-4">

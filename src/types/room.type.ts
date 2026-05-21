@@ -49,6 +49,10 @@ export interface Room {
     pinned: boolean;
     muted: boolean;
     last_read_id: string | null;
+    pinned_messages?: { id: string; content: string; type?: string }[];
+    pinned_count?: number;
+    isBlocked?: boolean;
+    blockByMine?: boolean;
 }
 
 export type RoomMembers = {

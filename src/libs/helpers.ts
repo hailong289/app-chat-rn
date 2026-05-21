@@ -190,6 +190,15 @@ export function formatDuration(seconds: number) {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+/** Countdown for quiz timer — supports hours when remaining time > 1h */
+export function formatCountdown(seconds: number) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
 export function formatTimeUntil(ms: number): string {
   if (ms <= 0 || !Number.isFinite(ms)) return "0 giây";
   const s = Math.floor(ms / 1000) % 60;
@@ -261,4 +270,60 @@ export function getMsUntilNextTransition(quiz: {
   if (start && now < start) return start - now;
   if (end && now < end) return end - now;
   return Infinity;
+}
+
+// ── Quiz/Room ID resolution helpers ──────────────────────────────────
+// API learning (update/delete/submit/results) uses quiz_id (ULID).
+// Socket message:send uses quiz._id (Mongo ObjectId).
+
+export interface QuizLike {
+  quiz_id?: string;
+  _id?: string;
+  id?: string;
+}
+
+export interface RoomLike {
+  _id?: string;
+  id?: string;
+  roomId?: string;
+}
+
+/** Returns the ULID quiz_id used by learning API endpoints. */
+export const getQuizApiId = (q: QuizLike): string =>
+  q.quiz_id || q._id || q.id || '';
+
+/** Returns the Mongo ObjectId used as quizId in socket message:send. */
+export const getQuizMongoId = (q: QuizLike): string =>
+  q._id || q.id || '';
+
+/** Returns the Mongo room _id used for quiz list/create API calls. */
+export const getRoomMongoId = (room: RoomLike | null | undefined): string =>
+  room?._id || room?.id || '';
+
+/** Normalize Mongo ObjectId / string user ids for comparison. */
+export function normalizeEntityId(id: unknown): string {
+  if (id == null) return "";
+  if (typeof id === "string") return id;
+  if (typeof id === "object") {
+    const obj = id as Record<string, unknown>;
+    if (typeof obj.$oid === "string") return obj.$oid;
+    if (typeof obj._id === "string") return obj._id;
+    if (obj._id && typeof obj._id === "object" && typeof (obj._id as { $oid?: string }).$oid === "string") {
+      return (obj._id as { $oid: string }).$oid;
+    }
+    if (typeof obj.toString === "function") {
+      const s = obj.toString();
+      if (s && s !== "[object Object]") return s;
+    }
+  }
+  return String(id);
+}
+
+export function findMyQuizResult<T extends { user_id?: unknown; is_submitted?: boolean }>(
+  results: T[] | undefined,
+  user: { _id?: string; id?: string } | null | undefined,
+): T | undefined {
+  if (!results?.length || !user) return undefined;
+  const ids = new Set([user._id, user.id].filter(Boolean).map((v) => normalizeEntityId(v)));
+  return results.find((r) => ids.has(normalizeEntityId(r.user_id)));
 }

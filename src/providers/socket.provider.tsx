@@ -57,6 +57,9 @@ export const SocketEvents = {
   // Error
   ERROR_MSG: "error:message",
   EXCEPTION: "exception",
+
+  // Quiz
+  UPDATE_QUIZ: "update:quiz",
 } as const;
 
 /* ================= TYPES ================= */

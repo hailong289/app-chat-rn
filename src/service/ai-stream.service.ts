@@ -91,19 +91,16 @@ export async function consumeAiSse(
     body: requestBody,
   });
 
-  if (!response.ok || !response.body) {
+  if (!response.ok) {
     throw new Error(`SSE request failed: ${response.status} ${response.statusText}`);
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let metadata: unknown;
   const chunks: string[] = [];
 
-  const processBufferedEvents = (flushAll = false) => {
+  const processBufferedEvents = (buffer: string, flushAll = false) => {
     const events = buffer.split("\n\n");
-    buffer = flushAll ? "" : events.pop() ?? "";
+    const remaining = flushAll ? "" : events.pop() ?? "";
     const toProcess = flushAll ? events.filter(Boolean) : events;
 
     for (const rawEvent of toProcess) {
@@ -145,18 +142,33 @@ export async function consumeAiSse(
         options?.onChunk?.(parsed.chunk);
       }
     }
+
+    return remaining;
   };
+
+  // React Native / Hermes may not expose ReadableStream on response.body — fall back to text()
+  const responseBody = (response as any).body as { getReader(): { read(): Promise<{ value: Uint8Array | undefined; done: boolean }> } } | null | undefined;
+  if (!responseBody) {
+    const text = await response.text();
+    processBufferedEvents(text, true);
+    return { metadata, chunks };
+  }
+
+  const reader = responseBody.getReader();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const decoder = new (globalThis as any).TextDecoder() as { decode(input?: BufferSource, options?: { stream?: boolean }): string };
+  let buffer = "";
 
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
       buffer += decoder.decode();
-      processBufferedEvents(true);
+      processBufferedEvents(buffer, true);
       break;
     }
 
     buffer += decoder.decode(value, { stream: true });
-    processBufferedEvents(false);
+    buffer = processBufferedEvents(buffer, false);
   }
 
   return { metadata, chunks };

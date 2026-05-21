@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { FilePreview, MessageType, RoomData, SendMessageArgs } from "../types/message.type";
 import { ObjectId } from "bson";
-import Helpers from "../libs/helpers";
+import Helpers, { normalizeEntityId } from "../libs/helpers";
 import MessageService from "../service/message.service";
 import db from "../libs/db";
 import {
@@ -72,7 +72,16 @@ const sanitizeMessageFromAPI = (msg: any): MessageType => {
       uploadedUrl: a.uploadedUrl,
     })),
     reactions: msg.reactions || [],
-    reply: msg.reply || undefined,
+    reply: msg.reply
+      ? {
+          ...msg.reply,
+          sender: {
+            _id: msg.reply.sender?._id || '',
+            name: msg.reply.sender?.name || '',
+            fullname: msg.reply.sender?.fullname || msg.reply.sender?.name || '',
+          },
+        }
+      : undefined,
     isMine: msg.sender?._id === currentUser?._id || msg.sender?.id === currentUser?._id,
     isRead: true,
     hiddenBy,
@@ -166,6 +175,10 @@ interface MessageState {
       callId: string,
       patch: { members?: any[]; ended_at?: string | null },
     ) => void;
+    // Quiz
+    updateQuizInMessages: (roomId: string, quizId: string, updatedQuiz: any) => void;
+    /** Sync room's ghim array when a message pin state changes via socket */
+    upsertPinnedMessage: (roomId: string, msg: { id: string; content: string; pinned: boolean }) => void;
 }
 
 const useMessageStore = create<MessageState>()(
@@ -176,14 +189,14 @@ const useMessageStore = create<MessageState>()(
 
         // ── Send Message ──────────────────────────────────────────
         sendMessage: async (payload) => {
-            const { roomId, type, content, replyTo, socket, attachments, userId, userFullname, userAvatar } = payload;
+            const { roomId, type, content, replyTo, socket, attachments, userId, userFullname, userAvatar, quiz } = payload;
             const prevRoom = get().messagesRoom[roomId] || { messages: [], input: null, attachments: null, ghim: [], updatedAt: null };
             const prevMessages = prevRoom.messages || [];
 
             const id = new ObjectId().toHexString();
             const foundReply = prevMessages.find((m) => m.id === replyTo);
             const reply = foundReply
-                ? { _id: foundReply.id, type: foundReply.type, content: foundReply.content, createdAt: foundReply.createdAt, sender: { _id: foundReply.sender._id, name: foundReply.sender.fullname || "Unknown" }, isMine: false, hiddenByMe: false, isDeleted: false }
+                ? { _id: foundReply.id, type: foundReply.type, content: foundReply.content, createdAt: foundReply.createdAt, sender: { _id: foundReply.sender._id, name: foundReply.sender.fullname || "Unknown", fullname: foundReply.sender.fullname || "Unknown" }, isMine: foundReply.isMine, hiddenByMe: foundReply.hiddenByMe || false, isDeleted: foundReply.isDeleted || false }
                 : undefined;
 
             const data: MessageType = {
@@ -193,6 +206,7 @@ const useMessageStore = create<MessageState>()(
                 isMine: true, isRead: true,
                 status: attachments && attachments.length > 0 ? "uploading" : "pending",
                 hiddenBy: [], hiddenByMe: false, hiddenAt: null, isDeleted: false, read_by: [], read_by_count: 0,
+                quiz: quiz as any,
             };
 
             set({
@@ -209,7 +223,9 @@ const useMessageStore = create<MessageState>()(
                     const targetRoom = roomStore.rooms.find((r) => r.id === roomId || r.roomId === roomId);
                     if (targetRoom) {
                         let snippet = content || "";
-                        if (attachments && attachments.length > 0) {
+                        if (type === "quiz") {
+                            snippet = `[Quiz] ${quiz?.quiz_title || content}`;
+                        } else if (attachments && attachments.length > 0) {
                             const first = attachments[0];
                             snippet = first.mimeType?.startsWith("image") || first.kind === "image" ? "[Hình ảnh]" : "[Tệp]";
                         }
@@ -227,7 +243,7 @@ const useMessageStore = create<MessageState>()(
                 return;
             }
 
-            socket?.emit("message:send", { roomId, type, content, replyTo, id });
+            socket?.emit("message:send", { roomId, type, content, replyTo, id, quizId: quiz?._id || quiz?.id });
             get().autoMarkMessageSent(roomId, id, 3000);
         },
 
@@ -714,6 +730,28 @@ const useMessageStore = create<MessageState>()(
             set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
         },
 
+        // ── Upsert Pinned Message (ghim sync) ─────────────────────
+        upsertPinnedMessage: (roomId, msg) => {
+            const currentRoom = get().messagesRoom[roomId];
+            if (!currentRoom) return;
+            const ghim = currentRoom.ghim || [];
+            const exists = ghim.some((id) => id === msg.id);
+            let updatedGhim: string[];
+            if (msg.pinned && !exists) {
+                updatedGhim = [...ghim, msg.id];
+            } else if (!msg.pinned && exists) {
+                updatedGhim = ghim.filter((id) => id !== msg.id);
+            } else {
+                return;
+            }
+            set({
+                messagesRoom: {
+                    ...get().messagesRoom,
+                    [roomId]: { ...currentRoom, ghim: updatedGhim },
+                },
+            });
+        },
+
         // ── Upsert Message Error ──────────────────────────────────
         upsetMsgError: (payload) => {
             const { roomId, id, content } = payload.data || {};
@@ -805,6 +843,48 @@ const useMessageStore = create<MessageState>()(
                 messagesRoom: {
                     ...get().messagesRoom,
                     [roomId]: { ...currentRoom, messages: updatedMessages },
+                },
+            });
+        },
+
+        // ── Update Quiz in Messages ─────────────────────────────────
+        updateQuizInMessages: (roomId, quizId, updatedQuiz) => {
+            const canonicalRoomId = resolveCanonicalRoomId(roomId);
+            const currentRoom =
+                get().messagesRoom[canonicalRoomId] ?? get().messagesRoom[roomId];
+            if (!currentRoom?.messages) return;
+
+            const targetIds = new Set(
+                [quizId, updatedQuiz?._id, updatedQuiz?.id, updatedQuiz?.quiz_id]
+                    .filter(Boolean)
+                    .map(String),
+            );
+
+            let changed = false;
+            const msgs = currentRoom.messages.map((msg) => {
+                if (msg.type !== 'quiz') return msg;
+                const msgQuiz = (msg as any).quiz;
+                if (!msgQuiz) return msg;
+                const ids = [msgQuiz._id, msgQuiz.id, msgQuiz.quiz_id].filter(Boolean).map(String);
+                if (!ids.some((id) => targetIds.has(id))) return msg;
+
+                changed = true;
+                const mergedQuiz = { ...msgQuiz, ...updatedQuiz };
+                if (Array.isArray(mergedQuiz.quiz_results)) {
+                    mergedQuiz.quiz_results = mergedQuiz.quiz_results.map((r: any) => ({
+                        ...r,
+                        user_id: normalizeEntityId(r.user_id),
+                    }));
+                }
+                return { ...msg, quiz: mergedQuiz };
+            });
+
+            if (!changed) return;
+
+            set({
+                messagesRoom: {
+                    ...get().messagesRoom,
+                    [canonicalRoomId]: { ...currentRoom, messages: msgs },
                 },
             });
         },

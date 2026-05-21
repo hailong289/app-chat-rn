@@ -89,6 +89,7 @@ export interface LeaderboardEntry {
   correct_count: number;
   total_score: number;
   max_score: number;
+  total_questions?: number;
   time_taken: number;
   is_completed: boolean;
 }
@@ -97,13 +98,15 @@ export interface QuizResultsListResponse {
   message: string;
   statusCode: number;
   metadata: {
-    results: QuizResultResponse[];
+    results?: QuizResultResponse[];
     leaderboard: LeaderboardEntry[];
-    my_result?: QuizResultResponse;
+    my_result?: QuizResultResponse | null;
     quiz_id: string;
     quiz_title: string;
     total_participants: number;
-    total_submissions: number;
+    total_submissions?: number;
+    submitted_count?: number;
+    not_submitted_count?: number;
   };
 }
 

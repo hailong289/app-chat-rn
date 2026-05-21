@@ -1,9 +1,12 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
+import useAuthStore from '@/src/store/useAuth';
 
 type ReplyInfo = {
-  _id: string;
+  _id?: string;
+  /** Some payloads use `id` instead of `_id` */
+  id?: string;
   type: string;
   content?: string;
   isMine?: boolean;
@@ -41,19 +44,29 @@ function getTypeBadgeLabel(type: string): string {
     case 'gif': return '🎬 GIF';
     case 'audio': return '🎵 Audio';
     case 'call': return '📞 Cuộc gọi';
+    case 'flashcard': return '🃏 Flashcard';
+    case 'quiz': return '❓ Quiz';
+    case 'document': return '📄 Tài liệu';
+    case 'todo_project': return '✅ Todo';
     default: return '';
   }
 }
 
-function getPreviewText(reply: ReplyInfo): string {
+function getPreviewText(reply: ReplyInfo, isReplySentByMe?: boolean): string {
   const isRecalled =
     !!reply.isDeleted || !!reply.isDelete || reply.status === 'recalled';
   const isHidden = !!reply.hiddenByMe;
 
   if (isHidden) return 'Tin nhắn đã bị ẩn';
   if (isRecalled)
-    return reply.isMine ? 'Bạn đã thu hồi tin nhắn' : 'Tin nhắn đã bị thu hồi';
-  if (reply.type === 'text') return reply.content || '';
+    return isReplySentByMe ? 'Bạn đã thu hồi tin nhắn' : 'Tin nhắn đã bị thu hồi';
+  if (reply.type === 'text') {
+    if (reply.content && reply.content.trim().length > 0) {
+      return reply.content;
+    }
+    return '[Tin nhắn văn bản]';
+  }
+  if (reply.type === 'gif') return '🎬 GIF';
   return (
     reply.attachments?.[0]?.name ||
     getTypeBadgeLabel(reply.type) ||
@@ -68,6 +81,8 @@ export const ReplyPreview: React.FC<ReplyPreviewProps> = ({
   showCloseButton = false,
   isMine = false,
 }) => {
+  const { user } = useAuthStore();
+
   if (!reply) return null;
 
   const isRecalled =
@@ -75,16 +90,21 @@ export const ReplyPreview: React.FC<ReplyPreviewProps> = ({
   const isHidden = !!reply.hiddenByMe;
   const showBadge = reply.type !== 'text' && !isRecalled && !isHidden;
 
-  const senderName = reply.isMine
+  const currentUserId = user?._id || user?.id || '';
+  const isReplySentByMe =
+    reply.isMine === true ||
+    (!!reply.sender?._id && reply.sender._id === currentUserId);
+
+  const senderName = isReplySentByMe
     ? 'Bạn'
     : reply.sender?.fullname || reply.sender?.name || 'Unknown';
-  const previewText = getPreviewText(reply);
+  const previewText = getPreviewText(reply, isReplySentByMe);
   const badgeLabel = showBadge ? getTypeBadgeLabel(reply.type) : '';
 
   return (
     <TouchableOpacity
       activeOpacity={onJump ? 0.7 : 1}
-      onPress={() => onJump?.(reply._id)}
+      onPress={() => onJump?.(reply._id || reply.id || '')}
       style={[
         styles.container,
         isMine ? styles.containerMine : styles.containerOther,

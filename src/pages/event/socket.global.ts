@@ -45,25 +45,35 @@ export const SocketEventGlobal = () => {
     }));
   });
 
-  const onMsgEmoji = useRef((data: any) => {
-    const { addReaction, removeReaction } = useMessageStore.getState();
-    if (data?.messageId && data?.emoji && data?.userId) {
-      if (data.action === 'remove') {
-        removeReaction(data.roomId, data.messageId, data.emoji, data.userId);
-      } else {
-        addReaction(data.roomId, data.messageId, data.emoji, data.userId);
-      }
+  // ── Message action inbound handlers ──────────────────────────────
+  // Backend broadcasts the updated message via message:upsert after
+  // each action. These listeners handle the full message payload.
+  const onMsgEmoji = useRef((msg: any) => {
+    useMessageStore.getState().upsetMsg(msg);
+  });
+
+  const onMsgPinned = useRef((msg: any) => {
+    useMessageStore.getState().upsetMsg(msg);
+    if (msg.roomId) {
+      useMessageStore.getState().upsertPinnedMessage(msg.roomId, msg);
     }
   });
 
-  const onMsgPinned = useRef((data: any) => {
-    if (data?.messageId && data?.roomId) {
-      useMessageStore.getState().togglePin(data.roomId, data.messageId, !!data.pinned);
-    }
+  const onMsgDelete = useRef((msg: any) => {
+    useMessageStore.getState().upsetMsg(msg);
+  });
+
+  const onMsgRecall = useRef((msg: any) => {
+    useMessageStore.getState().upsetMsg(msg);
   });
 
   const onMsgError = useRef((data: any) => {
     useMessageStore.getState().upsetMsgError(data);
+  });
+
+  const onUpdateQuiz = useRef((data: { roomId: string; quizId: string; payload: Record<string, unknown> }) => {
+    const canonicalRoomId = resolveCanonicalRoomId(data.roomId);
+    useMessageStore.getState().updateQuizInMessages(canonicalRoomId, String(data.quizId), data.payload);
   });
 
   const onRoomUpsert = useRef((data: any) => {
@@ -183,6 +193,8 @@ export const SocketEventGlobal = () => {
     chatSocket.on(SocketEvents.MARK_READ, onMsgMarkRead.current);
     chatSocket.on(SocketEvents.MESSAGE_EMOJI, onMsgEmoji.current);
     chatSocket.on(SocketEvents.MESSAGE_PINNED, onMsgPinned.current);
+    chatSocket.on(SocketEvents.MESSAGE_DELETE, onMsgDelete.current);
+    chatSocket.on(SocketEvents.MESSAGE_RECALL, onMsgRecall.current);
     chatSocket.on(SocketEvents.ERROR_MSG, onMsgError.current);
     chatSocket.on(SocketEvents.ROOM_UPSERT, onRoomUpsert.current);
     chatSocket.on(SocketEvents.ROOM_DELETE, onRoomDelete.current);
@@ -190,6 +202,7 @@ export const SocketEventGlobal = () => {
     chatSocket.on(SocketEvents.ON_TYPING, onTyping.current);
     chatSocket.on(SocketEvents.STATUS_ONLINE, onStatusOnline.current);
     chatSocket.on('status:online:bulk', onStatusOnlineBulk.current);
+    chatSocket.on(SocketEvents.UPDATE_QUIZ, onUpdateQuiz.current);
 
     chatSocket.emit('heartbeat');
     const heartbeatInterval = setInterval(() => {
@@ -202,6 +215,8 @@ export const SocketEventGlobal = () => {
       chatSocket.off(SocketEvents.MARK_READ, onMsgMarkRead.current);
       chatSocket.off(SocketEvents.MESSAGE_EMOJI, onMsgEmoji.current);
       chatSocket.off(SocketEvents.MESSAGE_PINNED, onMsgPinned.current);
+      chatSocket.off(SocketEvents.MESSAGE_DELETE, onMsgDelete.current);
+      chatSocket.off(SocketEvents.MESSAGE_RECALL, onMsgRecall.current);
       chatSocket.off(SocketEvents.ERROR_MSG, onMsgError.current);
       chatSocket.off(SocketEvents.ROOM_UPSERT, onRoomUpsert.current);
       chatSocket.off(SocketEvents.ROOM_DELETE, onRoomDelete.current);
@@ -209,6 +224,7 @@ export const SocketEventGlobal = () => {
       chatSocket.off(SocketEvents.ON_TYPING, onTyping.current);
       chatSocket.off(SocketEvents.STATUS_ONLINE, onStatusOnline.current);
       chatSocket.off('status:online:bulk', onStatusOnlineBulk.current);
+      chatSocket.off(SocketEvents.UPDATE_QUIZ, onUpdateQuiz.current);
     };
   }, [chatSocket]);
 

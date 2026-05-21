@@ -25,7 +25,7 @@ import MessageItem, {
   ChatMessageItem,
   groupMessagesWithSeparators,
 } from '../components/chat/message.component';
-import { useSocket } from '../providers/socket.provider';
+import { useSocket, SocketEvents } from '../providers/socket.provider';
 import useMessageStore from '../store/useMessage';
 import useAuthStore from '../store/useAuth';
 import useRoomStore from '../store/useRoom';
@@ -107,6 +107,53 @@ const ChatPage: React.FC = () => {
       handleScrollToEnd(true);
     }
   }, [chatData.length, isAtBottom, handleScrollToEnd]);
+
+  // Listen for real-time messages (including reply data) from socket
+  useEffect(() => {
+    if (!socket) return;
+    const { upsertMessage, upsetMsgError } = useMessageStore.getState();
+
+    const handleUpsert = (msg: Record<string, unknown>) => {
+      void upsertMessage(msg);
+    };
+    const handleError = (payload: any) => {
+      upsetMsgError(payload);
+    };
+    const handleRecall = (payload: any) => {
+      const store = useMessageStore.getState();
+      const roomId = payload?.roomId;
+      const msgId = payload?.messageId || payload?._id || payload?.id;
+      if (roomId && msgId) store.recallMessage(roomId, msgId);
+    };
+    const handleDelete = (payload: any) => {
+      const store = useMessageStore.getState();
+      const roomId = payload?.roomId;
+      const msgId = payload?.messageId || payload?._id || payload?.id;
+      if (roomId && msgId) store.deleteMessage(roomId, msgId);
+    };
+    const handleEmoji = (msg: Record<string, unknown>) => {
+      void upsertMessage(msg);
+    };
+    const handlePinned = (msg: Record<string, unknown>) => {
+      void upsertMessage(msg);
+    };
+
+    socket.on(SocketEvents.MESSAGE_UPSERT, handleUpsert);
+    socket.on(SocketEvents.ERROR_MSG, handleError);
+    socket.on(SocketEvents.MESSAGE_RECALL, handleRecall);
+    socket.on(SocketEvents.MESSAGE_DELETE, handleDelete);
+    socket.on(SocketEvents.MESSAGE_EMOJI, handleEmoji);
+    socket.on(SocketEvents.MESSAGE_PINNED, handlePinned);
+
+    return () => {
+      socket.off(SocketEvents.MESSAGE_UPSERT, handleUpsert);
+      socket.off(SocketEvents.ERROR_MSG, handleError);
+      socket.off(SocketEvents.MESSAGE_RECALL, handleRecall);
+      socket.off(SocketEvents.MESSAGE_DELETE, handleDelete);
+      socket.off(SocketEvents.MESSAGE_EMOJI, handleEmoji);
+      socket.off(SocketEvents.MESSAGE_PINNED, handlePinned);
+    };
+  }, [socket]);
 
   const handleTypingStart = useCallback(() => {
     socket?.emit('user:typing', { roomId: chatId, isTyping: true });

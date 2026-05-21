@@ -105,10 +105,13 @@ export type MessageType = {
     sender: {
       _id: string;
       name: string;
+      fullname?: string;
     };
     isMine: boolean;
     hiddenByMe: boolean;
     isDeleted: boolean;
+    isDelete?: boolean;
+    status?: string;
   };
   isMine: boolean;
   isRead: boolean;
@@ -184,6 +187,7 @@ export interface SendMessageArgs {
   userId?: string;
   userFullname?: string;
   userAvatar?: string;
+  quiz?: import('../types/quizz.type').QuizzResponse;
 }
 
 
