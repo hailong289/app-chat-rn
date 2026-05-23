@@ -1,4 +1,4 @@
-import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword, PayloadVerifyOtp, UpdatePasswordPayload, UpdateProfilePayload } from "../types/auth.type";
+import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword, PayloadSendOtp, PayloadVerifyOtp, UpdatePasswordPayload, UpdateProfilePayload } from "../types/auth.type";
 import ApiResponse from "../types/response.type";
 import apiService from "./api.service";
 
@@ -8,18 +8,14 @@ export default class AuthService {
         return apiService.post<ApiResponse<AuthMetadata>>('/auth/login', payload);
     }
 
+    // ── Send OTP ───────────────────────────────────────────────────────
+    public static async sendOtp(payload: Pick<PayloadSendOtp, 'email' | 'type'>) {
+        return await apiService.post('/auth/send-otp', payload);
+    }
+
     // ── Register ───────────────────────────────────────────────────────
     public static async register(payload: Omit<PayloadRegister, 'success' | 'error'>) {
-        const params: any = { ...payload };
-        if (params.type === 'phone') {
-            params.phone = params.username;
-            delete params.username;
-        } else {
-            params.email = params.username;
-            delete params.username;
-        }
-        delete params.confirm;
-        return await apiService.post<ApiResponse<AuthMetadata>>('/auth/register', params);
+        return await apiService.post<ApiResponse<AuthMetadata>>('/auth/register', payload);
     }
 
     // ── Logout ─────────────────────────────────────────────────────────

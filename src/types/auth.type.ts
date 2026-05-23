@@ -3,20 +3,24 @@ import { User } from './user.type';
 export interface PayloadLogin {
   username: string;
   password: string;
-  type?: 'email' | 'phone';
   fcmToken: string | null;
   success: (data?: any) => void;
   error: (error?: any) => void;
 }
 
+export interface PayloadSendOtp {
+    email: string;
+    type: 'register' | 'reset-password';
+    success: (data?: any) => void;
+    error: (error?: any) => void;
+}
+
 export interface PayloadRegister {
     fullname: string;
-    username: string;
+    tempRegisterToken: string;
     password: string;
-    confirm: string;
     gender: 'male' | 'female' | 'other';
     dateOfBirth: string;
-    type?: 'email' | 'phone';
     fcmToken: string | null;
     success: (data?: any) => void;
     error: (error?: any) => void;
@@ -45,7 +49,7 @@ export interface PayloadForgotPassword {
 export interface PayloadVerifyOtp {
     indicator: string;
     otp: string;
-    type: "reset-password" | "verify-account";
+    type: "reset-password" | "verify-account" | "register";
     success: (data?: any) => void;
     error: (error?: any) => void;
 }
@@ -91,6 +95,7 @@ export interface AuthState {
         expiredAt: number; // timestamp token hết hạn
     } | null;
     login: (payload: PayloadLogin) => Promise<void>;
+    sendOtp: (payload: PayloadSendOtp) => Promise<void>;
     register: (payload: PayloadRegister) => Promise<void>;
     logout: (payload: PayloadLogout) => Promise<void>;
     forgotPassword: (payload: PayloadForgotPassword) => Promise<void>;

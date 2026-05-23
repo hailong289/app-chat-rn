@@ -94,12 +94,14 @@ const LoginPage = () => {
                             isRequired={false}
                         >
                             <FormControlLabel>
-                                <FormControlLabelText>Tên đăng nhập</FormControlLabelText>
+                                <FormControlLabelText>Email</FormControlLabelText>
                             </FormControlLabel>
                             <Input className="my-1 h-[50px] border-gray-300 rounded-[20px]" size="md" variant="outline">
                                 <InputField
                                     type="text"
-                                    placeholder="Nhập email hoặc số điện thoại"
+                                    keyboardType="email-address"
+                                    autoCapitalize="none"
+                                    placeholder="Nhập địa chỉ email"
                                     value={form.username}
                                     className="text-gray-500"
                                     onChangeText={(text) => handleInputChange('username', text)}

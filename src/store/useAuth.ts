@@ -9,7 +9,7 @@
 
 import { create } from "zustand";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { AuthState, PayloadLogin, PayloadRegister, PayloadLogout, PayloadForgotPassword, PayloadVerifyOtp, PayloadResetPassword, AuthMetadata, UpdatePasswordPayload, UpdateProfilePayload, UpdateAvatarPayload } from "../types/auth.type";
+import { AuthState, PayloadLogin, PayloadRegister, PayloadLogout, PayloadForgotPassword, PayloadSendOtp, PayloadVerifyOtp, PayloadResetPassword, AuthMetadata, UpdatePasswordPayload, UpdateProfilePayload, UpdateAvatarPayload } from "../types/auth.type";
 import { User } from "../types/user.type";
 import AuthService from "../service/auth.service";
 import {
@@ -110,6 +110,31 @@ const useAuthStore = create<AuthState>()(
         payload.error?.(error);
       } finally {
         release?.();
+      }
+    },
+
+    // ── Send OTP ───────────────────────────────────────────────────
+    sendOtp: async (payload: PayloadSendOtp) => {
+      set({ isLoading: true });
+      try {
+        const response = await AuthService.sendOtp({
+          email: payload.email,
+          type: payload.type,
+        });
+        const data = response.data;
+        if (data?.statusCode && data.statusCode >= 400) {
+          payload.error?.({
+            message: data.message,
+            statusCode: data.statusCode,
+            reasonStatusCode: data.reasonStatusCode,
+          });
+          return;
+        }
+        payload.success?.();
+      } catch (error) {
+        payload.error?.(error);
+      } finally {
+        set({ isLoading: false });
       }
     },
 
