@@ -9,7 +9,6 @@ import React, {
 import {
   View,
   Text,
-  FlatList,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
@@ -17,6 +16,7 @@ import {
   NativeScrollEvent,
   StyleSheet,
 } from 'react-native';
+import { FlatList } from 'react-native-gesture-handler';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import HeaderChatComponent from '../components/headers/headers-chat.component';
@@ -24,7 +24,9 @@ import type { MainStackParamList } from '../navigations/MainStackNavigator';
 import MessageItem, {
   ChatMessageItem,
   groupMessagesWithSeparators,
+  OnReplyContext,
 } from '../components/chat/message.component';
+import { ChatModals } from '../components/chat/ChatModals';
 import { useSocket, SocketEvents } from '../providers/socket.provider';
 import useMessageStore from '../store/useMessage';
 import useAuthStore from '../store/useAuth';
@@ -194,7 +196,11 @@ const ChatPage: React.FC = () => {
     [chatId, socket, user, sendMessage, handleScrollToEnd],
   );
 
-  const handleReply = useCallback((msg: MessageType) => setReplyingTo(msg), []);
+  const replyingToRef = useRef<MessageType | null>(null);
+  const handleReply = useCallback((msg: MessageType) => {
+    replyingToRef.current = msg;
+    setReplyingTo(msg);
+  }, []);
 
   const renderItem = useCallback(
     ({ item }: { item: ChatMessageItem }) => (
@@ -221,7 +227,7 @@ const ChatPage: React.FC = () => {
 
     setIsFetchingMore(true);
     try {
-      const older = await loadOlderMessages(chatId, 50);
+      const older = await loadOlderMessages(chatId, 20);
       if (!older || older.length === 0) {
         hasMoreOlderRef.current = false;
       }
@@ -233,8 +239,9 @@ const ChatPage: React.FC = () => {
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-      const isAtTop = contentOffset.y <= 48;
 
+      // Load older messages when user scrolls near top
+      const isAtTop = contentOffset.y <= 48;
       if (isAtTop) {
         if (!atTopRef.current) {
           atTopRef.current = true;
@@ -247,7 +254,6 @@ const ChatPage: React.FC = () => {
       const distanceFromBottom =
         contentSize.height - layoutMeasurement.height - contentOffset.y;
       setIsAtBottom(distanceFromBottom < 120);
-
       handleReadScroll(event);
     },
     [handleLoadMore, handleReadScroll],
@@ -285,7 +291,7 @@ const ChatPage: React.FC = () => {
   }, [navigation, openDrawer]);
 
   return (
-    <>
+    <OnReplyContext.Provider value={handleReply}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -314,15 +320,15 @@ const ChatPage: React.FC = () => {
                 ) : null
               }
               onScroll={handleScroll}
-              scrollEventThrottle={16}
+              scrollEventThrottle={32}
               contentContainerStyle={[
                 styles.listContent,
                 chatData.length === 0 && styles.listContentEmpty,
               ]}
               removeClippedSubviews={false}
-              maxToRenderPerBatch={12}
-              windowSize={9}
-              initialNumToRender={18}
+              maxToRenderPerBatch={10}
+              windowSize={11}
+              initialNumToRender={10}
             />
           )}
 
@@ -344,6 +350,8 @@ const ChatPage: React.FC = () => {
           onTypingStart={handleTypingStart}
           onTypingStop={handleTypingStop}
         />
+        {/* Modals rendered inside KAV but appear above everything via native Modal layer */}
+        <ChatModals />
       </KeyboardAvoidingView>
 
       <ChatDrawer
@@ -352,7 +360,7 @@ const ChatPage: React.FC = () => {
         roomId={chatId}
         onScrollToMessage={() => setDrawerVisible(false)}
       />
-    </>
+    </OnReplyContext.Provider>
   );
 };
 

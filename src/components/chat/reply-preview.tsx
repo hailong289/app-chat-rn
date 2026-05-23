@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import useAuthStore from '@/src/store/useAuth';
+import { MESSAGE_BUBBLE_MAX_WIDTH } from './constants/messageConstants';
 
 type ReplyInfo = {
   _id?: string;
@@ -29,10 +30,7 @@ type ReplyPreviewProps = {
   onClose?: () => void;
   /** Dùng trong InputBar: hiện nút X để xóa reply */
   showCloseButton?: boolean;
-  /**
-   * true khi ReplyPreview nằm trong bubble của mình (primary bg).
-   * Sẽ dùng nền tối + text sáng để tạo contrast.
-   */
+  /** true khi ReplyPreview nằm trên bubble của mình — nền primary nhạt hơn bubble. */
   isMine?: boolean;
 };
 
@@ -105,38 +103,33 @@ export const ReplyPreview: React.FC<ReplyPreviewProps> = ({
     <TouchableOpacity
       activeOpacity={onJump ? 0.7 : 1}
       onPress={() => onJump?.(reply._id || reply.id || '')}
-      style={[
-        styles.container,
-        isMine ? styles.containerMine : styles.containerOther,
-      ]}
+      className={`flex-row items-stretch rounded-2xl mb-1 overflow-hidden ${
+        isMine ? 'bg-primary-500/10' : 'bg-gray-100'
+      } ${showCloseButton ? 'w-full' : isMine ? 'self-end' : 'self-start'}`}
+      style={showCloseButton ? undefined : { maxWidth: MESSAGE_BUBBLE_MAX_WIDTH }}
     >
-      <View
-        style={[
-          styles.leftBar,
-          isMine ? styles.leftBarMine : styles.leftBarOther,
-        ]}
-      />
-      <View style={styles.content}>
-        <View style={styles.header}>
+      <View className="w-[3px] bg-primary-500" />
+      <View className="px-2.5 py-1.5">
+        <View className="flex-row items-center mb-0.5 gap-1">
           <FontAwesome
             name="reply"
             size={10}
-            color={isMine ? '#a5f3fc' : '#0d9488'}
-            style={styles.replyIcon}
+            color="#42A59F"
+            style={{ marginRight: 2 }}
           />
-          <Text style={[styles.senderName, isMine && styles.senderNameMine]}>
+          <Text className="text-xs font-semibold text-black">
             {senderName}
           </Text>
           {!!badgeLabel && (
-            <View style={[styles.badge, isMine && styles.badgeMine]}>
-              <Text style={[styles.badgeText, isMine && styles.badgeTextMine]}>
+            <View className="rounded-full px-1.5 py-px ml-1 bg-primary-500/15">
+              <Text className="text-[10px] text-black">
                 {badgeLabel}
               </Text>
             </View>
           )}
         </View>
         <Text
-          style={[styles.previewText, isMine && styles.previewTextMine]}
+          className="text-sm leading-[18px] text-black"
           numberOfLines={2}
         >
           {previewText}
@@ -145,98 +138,14 @@ export const ReplyPreview: React.FC<ReplyPreviewProps> = ({
       {showCloseButton && onClose && (
         <TouchableOpacity
           onPress={onClose}
-          style={styles.closeButton}
+          className="p-2 justify-center items-center"
           hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
         >
-          <FontAwesome
-            name="times"
-            size={14}
-            color={isMine ? '#cbd5e1' : '#6b7280'}
-          />
+          <FontAwesome name="times" size={14} color="#6b7280" />
         </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    borderRadius: 8,
-    marginBottom: 4,
-    overflow: 'hidden',
-  },
-  /** Bubble của người khác: nền xanh lá nhạt (teal) */
-  containerOther: {
-    backgroundColor: '#f0fdf4',
-  },
-  /** Bubble của mình: nền trắng mờ trên nền primary */
-  containerMine: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-  },
-  leftBar: {
-    width: 3,
-  },
-  leftBarOther: {
-    backgroundColor: '#0d9488',
-  },
-  leftBarMine: {
-    backgroundColor: '#a5f3fc',
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-    gap: 4,
-  },
-  replyIcon: {
-    marginRight: 2,
-  },
-  senderName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0d9488',
-  },
-  senderNameMine: {
-    color: '#a5f3fc',
-  },
-  /** Badge màu primary (tím) — nhất quán với web bg-primary-100 text-primary-700 */
-  badge: {
-    backgroundColor: '#ede9fe',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-    marginLeft: 4,
-  },
-  badgeMine: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  badgeText: {
-    fontSize: 10,
-    color: '#6d28d9',
-  },
-  badgeTextMine: {
-    color: '#e0e7ff',
-  },
-  previewText: {
-    fontSize: 13,
-    color: '#374151',
-    lineHeight: 18,
-  },
-  previewTextMine: {
-    color: 'rgba(255,255,255,0.85)',
-  },
-  closeButton: {
-    padding: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});
 
 export default ReplyPreview;

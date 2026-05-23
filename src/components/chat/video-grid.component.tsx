@@ -12,10 +12,11 @@ type Attachment = FilePreview;
 export interface VideoGridProps {
   videos: Attachment[];
   onVideoPress: (index: number) => void;
+  onLongPress?: () => void;
   getAttachmentSource: (attachment: Attachment) => string | undefined;
 }
 
-const VideoGrid: React.FC<VideoGridProps> = ({ videos, onVideoPress, getAttachmentSource }) => {
+const VideoGrid: React.FC<VideoGridProps> = ({ videos, onVideoPress, onLongPress, getAttachmentSource }) => {
   const count = videos.length;
   const gap = 2;
   
@@ -50,6 +51,7 @@ const VideoGrid: React.FC<VideoGridProps> = ({ videos, onVideoPress, getAttachme
           itemHeight={itemHeight}
           gap={gap}
           onVideoPress={onVideoPress}
+          onLongPress={onLongPress}
           getAttachmentSource={getAttachmentSource}
         />
       ))}

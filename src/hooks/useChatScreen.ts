@@ -7,8 +7,9 @@ const LOAD_TIMEOUT_MS = 10_000;
 const MAX_LOAD_ATTEMPTS = 3;
 
 /**
- * Chat room bootstrap — mirrors app-chat-fe useChatMessagesEffects
- * (loadRoomFromCache + loadingChatId, no stuck spinner on empty rooms).
+ * Chat room bootstrap.
+ * Strategy: always load from API first (10 latest messages),
+ * fallback to SQLite cache if API fails.
  */
 export function useChatScreen(
   paramRoomId: string,
@@ -22,7 +23,6 @@ export function useChatScreen(
 
   const isLoadingMessages = loadingChatId === chatId;
 
-  // Only re-run when chatId changes — avoid loop from unstable socket/store fn refs
   useEffect(() => {
     if (!chatId) return;
 
@@ -35,14 +35,8 @@ export function useChatScreen(
     const myChatId = chatId;
     const isStillActive = () => loadedChatIdRef.current === myChatId;
 
-    const storeRoom = useMessageStore.getState().messagesRoom[myChatId];
-    const hasCachedInStore = (storeRoom?.messages?.length ?? 0) > 0;
-
-    if (hasCachedInStore) {
-      setLoadingChatId(null);
-    } else {
-      setLoadingChatId(myChatId);
-    }
+    // Always show loading on room switch — API is source of truth
+    setLoadingChatId(myChatId);
 
     const finishLoading = () => {
       setLoadingChatId((cur) => (cur === myChatId ? null : cur));
@@ -64,7 +58,7 @@ export function useChatScreen(
           return;
         }
         const delay = 500 * Math.pow(2, n);
-        await new Promise((r) => setTimeout(r, delay));
+        await new Promise<void>((r) => setTimeout(r, delay));
         if (!isStillActive()) return;
         await attempt(n + 1);
       }

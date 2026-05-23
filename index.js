@@ -4,6 +4,7 @@
 
 // Required for crypto-js (AES) in React Native — must be first import.
 import 'react-native-get-random-values';
+import 'react-native-gesture-handler';
 
 import { ensureWebRtcGlobals } from './src/libs/webrtc-globals';
 ensureWebRtcGlobals();

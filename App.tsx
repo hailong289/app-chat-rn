@@ -7,6 +7,7 @@
 
 import React, { Suspense } from 'react';
 import { StatusBar, useColorScheme, View, Text, ActivityIndicator } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   SafeAreaProvider,
 } from 'react-native-safe-area-context';
@@ -34,24 +35,26 @@ function App() {
   const isDarkMode = useColorScheme() === 'dark';
 
   return (
-    <ErrorBoundary fallbackName="App">
-      <GluestackUIProvider mode="dark">
-        <SafeAreaProvider>
-          <FirebaseProvider>
-            <SQLiteProvider>
-              <SocketProvider namespaces={["/chat", "/call"]}>
-                <SocketEventGlobal />
-                <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-                <Suspense fallback={<Fallback />}>
-                  <AppNavigator />
-                </Suspense>
-              </SocketProvider>
-            </SQLiteProvider>
-            <ToastManager />
-          </FirebaseProvider>
-        </SafeAreaProvider>
-      </GluestackUIProvider>
-    </ErrorBoundary>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary fallbackName="App">
+        <GluestackUIProvider mode="dark">
+          <SafeAreaProvider>
+            <FirebaseProvider>
+              <SQLiteProvider>
+                <SocketProvider namespaces={["/chat", "/call"]}>
+                  <SocketEventGlobal />
+                  <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+                  <Suspense fallback={<Fallback />}>
+                    <AppNavigator />
+                  </Suspense>
+                </SocketProvider>
+              </SQLiteProvider>
+              <ToastManager />
+            </FirebaseProvider>
+          </SafeAreaProvider>
+        </GluestackUIProvider>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }
 

@@ -12,10 +12,11 @@ type Attachment = FilePreview;
 export interface ImageGridProps {
   images: Attachment[];
   onImagePress: (index: number) => void;
+  onLongPress?: () => void;
   getAttachmentSource: (attachment: Attachment) => string | undefined;
 }
 
-const ImageGrid: React.FC<ImageGridProps> = ({ images, onImagePress, getAttachmentSource }) => {
+const ImageGrid: React.FC<ImageGridProps> = ({ images, onImagePress, onLongPress, getAttachmentSource }) => {
   const count = images.length;
   const gap = 2;
   
@@ -50,6 +51,7 @@ const ImageGrid: React.FC<ImageGridProps> = ({ images, onImagePress, getAttachme
           itemHeight={itemHeight}
           gap={gap}
           onImagePress={onImagePress}
+          onLongPress={onLongPress}
           getAttachmentSource={getAttachmentSource}
         />
       ))}

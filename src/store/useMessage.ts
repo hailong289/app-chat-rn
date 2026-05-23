@@ -351,129 +351,65 @@ const useMessageStore = create<MessageState>()(
             set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...currentRoom, messages: msgs } } });
         },
 
-        // ── Load room: SQLite cache first, then delta/full API (app-chat-fe) ──
-        loadRoomFromCache: async (roomId, limit = 20) => {
+        // ── Load room: API-first, fallback to SQLite cache on error ──
+        loadRoomFromCache: async (roomId, limit = 10) => {
             const chatId = resolveCanonicalRoomId(roomId);
             if (!chatId) return { cached: [], fetched: Promise.resolve() };
 
-            let cached: MessageType[] = [];
-            try {
-                const rows =
-                    (await Messages.getInstance()
-                        .getQuery()
-                        .where("roomId", "=", chatId)
-                        .orderBy("createdAt", "DESC")
-                        .limit(limit)
-                        .get()) ?? [];
-                cached = (rows as Record<string, unknown>[])
-                    .map(parseMessageFromDB)
-                    .reverse();
-            } catch {
-                cached = [];
-            }
-
-            if (cached.length > 0) {
-                const currentRoom =
-                    get().messagesRoom[chatId] || {
-                        messages: [],
-                        input: null,
-                        attachments: null,
-                        ghim: [],
-                        updatedAt: null,
-                    };
+            const setMessages = (msgs: MessageType[]) => {
+                const currentRoom = get().messagesRoom[chatId] || {
+                    messages: [], input: null, attachments: null, ghim: [], updatedAt: null,
+                };
                 const existing = currentRoom.messages || [];
-                const cachedIds = new Set(cached.map((m) => m.id));
-                const socketOnly = existing.filter((m) => !cachedIds.has(m.id));
-                const merged = [...cached, ...socketOnly].sort(
-                    (a, b) =>
-                        new Date(a.createdAt).getTime() -
-                        new Date(b.createdAt).getTime(),
+                const apiIds = new Set(msgs.map((m) => m.id));
+                const socketOnly = existing.filter((m) => !apiIds.has(m.id));
+                const merged = [...msgs, ...socketOnly].sort(
+                    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
                 );
                 set({
                     messagesRoom: {
                         ...get().messagesRoom,
-                        [chatId]: {
-                            ...currentRoom,
-                            messages: merged,
-                            updatedAt: new Date().toISOString(),
-                        },
+                        [chatId]: { ...currentRoom, messages: merged, updatedAt: new Date().toISOString() },
                     },
                 });
-            }
+                return merged;
+            };
 
-            const room = useRoomStore
-                .getState()
-                .rooms.find((r) => r.id === chatId || r.roomId === chatId);
-            const serverLatestId = room?.last_message?.id ?? null;
-            const latestCachedId = cached[cached.length - 1]?.id;
-            const cacheIsFresh =
-                !!latestCachedId &&
-                !!serverLatestId &&
-                latestCachedId === serverLatestId;
-
-            if (cacheIsFresh) {
-                return { cached, fetched: Promise.resolve() };
-            }
-
-            if (cached.length === 0 && !serverLatestId) {
-                return { cached, fetched: Promise.resolve() };
-            }
-
+            // 1. Try API first
             const fetched = (async () => {
-                if (latestCachedId) {
-                    await get().fetchNewMessages(chatId, latestCachedId);
-                } else {
+                try {
                     const response = await MessageService.getMessages({
                         roomId: chatId,
                         queryParams: { limit },
                     });
                     const fresh = (response.data.metadata || []).map(
-                        (msg: unknown) =>
-                            sanitizeMessageFromAPI({
-                                ...(msg as object),
-                                roomId: chatId,
-                            }),
+                        (msg: unknown) => sanitizeMessageFromAPI({ ...(msg as object), roomId: chatId }),
                     );
-                    if (fresh.length === 0) return;
 
+                    // Persist to SQLite
                     for (const msg of fresh) {
-                        await Messages.getInstance()
-                            .getQuery()
-                            .upsert(sanitizeMessageForDB(msg as MessageType));
+                        await Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(msg as MessageType));
                     }
 
-                    const prevRoom =
-                        get().messagesRoom[chatId] || {
-                            messages: [],
-                            input: null,
-                            attachments: null,
-                            ghim: [],
-                            updatedAt: null,
-                        };
-                    const prevMessages = prevRoom.messages || [];
-                    const apiIds = new Set(fresh.map((m) => m.id));
-                    const socketOnly = prevMessages.filter(
-                        (m) => !apiIds.has(m.id),
-                    );
-                    const merged = [...fresh, ...socketOnly].sort(
-                        (a, b) =>
-                            new Date(a.createdAt).getTime() -
-                            new Date(b.createdAt).getTime(),
-                    );
-                    set({
-                        messagesRoom: {
-                            ...get().messagesRoom,
-                            [chatId]: {
-                                ...prevRoom,
-                                messages: merged,
-                                updatedAt: new Date().toISOString(),
-                            },
-                        },
-                    });
+                    setMessages(fresh);
+                } catch {
+                    // 2. Fallback: load from SQLite cache
+                    try {
+                        const rows = (await Messages.getInstance()
+                            .getQuery()
+                            .where("roomId", "=", chatId)
+                            .orderBy("createdAt", "DESC")
+                            .limit(limit)
+                            .get()) ?? [];
+                        const cached = (rows as Record<string, unknown>[]).map(parseMessageFromDB).reverse();
+                        if (cached.length > 0) setMessages(cached);
+                    } catch {
+                        // ignore
+                    }
                 }
             })();
 
-            return { cached, fetched };
+            return { cached: [], fetched };
         },
 
         // ── Get Messages ──────────────────────────────────────────

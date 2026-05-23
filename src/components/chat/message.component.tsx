@@ -1,38 +1,38 @@
 import { MessageType } from '@/src/types/message.type';
-import React, { useCallback, useState, memo } from 'react';
+import React, { useCallback, useMemo, memo, createContext } from 'react';
+import { sameAttachments, sameIds, sameReactions, sameStringArr } from '@/src/libs/equality';
 import {
   View,
   Text,
   TouchableOpacity,
-  TouchableWithoutFeedback,
+  Pressable,
   Vibration,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 import { HStack } from '../ui/hstack';
 import Helpers from '@/src/libs/helpers';
-import ImageViewerModal from './image-viewer-modal.component';
-import VideoViewerModal from './video-viewer-modal.component';
 import ImageGrid from './image-grid.component';
 import VideoGrid from './video-grid.component';
 import { ImageAvatar } from './image-avatar.component';
 import { Box } from '../ui/box';
 import { ReplyPreview } from './reply-preview';
-import { MessageContextMenu } from './message-context-menu';
-import { ReactionsPicker } from './reactions-picker';
 import { useSocket } from '@/src/providers/socket.provider';
 import useAuthStore from '@/src/store/useAuth';
 import useMessageStore from '@/src/store/useMessage';
-import { SystemMessageBubble } from './system-message-bubble';
-import { FlashcardDeckMessageCard } from './flashcard-deck-message-card';
+import useChatUIStore from '@/src/store/useChatUIStore';
 import CallBubble from './call-bubble';
 import { MessageReactions } from './message-reactions';
 import LinkPreview from './LinkPreview';
-import TodoProjectCard from './todo-project-card';
-import QuizMessageCard from './quiz-message-card';
 import {
   MAX_MESSAGE_LENGTH,
   MESSAGE_BUBBLE_MAX_WIDTH,
 } from './constants/messageConstants';
+import SystemContent from './message/SystemContent';
+import QuizContent from './message/QuizContent';
+import FlashcardContent from './message/FlashcardContent';
+import TodoContent from './message/TodoContent';
+
+/** Context to pass the page-level onReply down without changing renderItem identity. */
+export const OnReplyContext = createContext<((msg: MessageType) => void) | undefined>(undefined);
 
 export type DateSeparatorItem = {
   kind: 'date';
@@ -121,66 +121,51 @@ type MessageBubbleProps = {
 const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => {
   const { socket } = useSocket();
   const { user } = useAuthStore();
-  const navigation = useNavigation<any>();
+  // Use individual selectors — functions are stable (created once in store), won't trigger re-renders
+  const openImageViewer = useChatUIStore((s) => s.openImageViewer);
+  const openVideoViewer = useChatUIStore((s) => s.openVideoViewer);
+  const openContextMenu = useChatUIStore((s) => s.openContextMenu);
+  const openReactionPicker = useChatUIStore((s) => s.openReactionPicker);
+  const isExpanded = useChatUIStore((s) => s.expandedMessages.has(item.id));
+  const toggleExpanded = useChatUIStore((s) => s.toggleExpanded);
   const hiddenByMe = item.hiddenBy?.includes(user?._id || '') ?? false;
 
-  const attachments = (item.attachments ?? []) as Attachment[];
-  const mediaAttachments = attachments.filter(
-    (attachment) =>
-      ['image', 'video'].includes(attachment.kind) ||
-      attachment.mimeType?.startsWith('image/') ||
-      attachment.mimeType?.startsWith('video/'),
-  );
-
-  const imageAttachments = mediaAttachments.filter(
-    (attachment) =>
-      attachment.kind === 'image' || attachment.mimeType?.startsWith('image/'),
-  );
-  const videoAttachments = mediaAttachments.filter(
-    (attachment) =>
-      attachment.kind === 'video' || attachment.mimeType?.startsWith('video/'),
-  );
-
-  const hasMedia = mediaAttachments.length > 0;
-
-  const [imageViewerVisible, setImageViewerVisible] = useState(false);
-  const [imageViewerIndex, setImageViewerIndex] = useState(0);
-  const [videoViewerVisible, setVideoViewerVisible] = useState(false);
-  const [videoViewerIndex, setVideoViewerIndex] = useState(0);
-  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
-
-  const [contextMenuVisible, setContextMenuVisible] = useState(false);
-  const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
+  const { imageAttachments, videoAttachments, hasMedia } = useMemo(() => {
+    const list = (item.attachments ?? []) as Attachment[];
+    const media = list.filter(
+      (a) =>
+        a.kind === 'image' ||
+        a.kind === 'video' ||
+        a.mimeType?.startsWith('image/') ||
+        a.mimeType?.startsWith('video/'),
+    );
+    return {
+      imageAttachments: media.filter(
+        (a) => a.kind === 'image' || a.mimeType?.startsWith('image/'),
+      ),
+      videoAttachments: media.filter(
+        (a) => a.kind === 'video' || a.mimeType?.startsWith('video/'),
+      ),
+      hasMedia: media.length > 0,
+    };
+  }, [item.attachments]);
 
   const isLongMessage = (content: string | null | undefined): boolean => {
     if (!content) return false;
     return content.length > MAX_MESSAGE_LENGTH;
   };
 
-  // Simple URL extraction for link preview
-  const extractUrl = (content: string | null | undefined): string | null => {
-    if (!content) return null;
-    const match = content.match(/https?:\/\/[^\s]+/);
+  const previewUrl = useMemo(() => {
+    if (!item.content || hasMedia) return null;
+    const match = item.content.match(/https?:\/\/[^\s]+/);
     return match ? match[0] : null;
-  };
-  const previewUrl = extractUrl(item.content);
+  }, [item.content, hasMedia]);
 
   const resendMessage = useCallback(() => {
     const { resendMessage } = useMessageStore.getState();
     resendMessage(item.roomId, item.id, socket);
   }, [item.roomId, item.id, socket]);
 
-  const toggleMessageExpansion = (messageId: string) => {
-    setExpandedMessages((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(messageId)) {
-        newSet.delete(messageId);
-      } else {
-        newSet.add(messageId);
-      }
-      return newSet;
-    });
-  };
 
   const getAttachmentSource = useCallback((attachment: Attachment) => {
     if (attachment?.mimeType?.startsWith('video/')) {
@@ -189,26 +174,34 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
     return attachment?.thumbUrl || attachment?.uploadedUrl || attachment?.url;
   }, []);
 
-  const handleImagePress = useCallback((index: number) => {
-    setImageViewerIndex(index);
-    setImageViewerVisible(true);
-  }, []);
+  const handleImagePress = useCallback(
+    (index: number) => {
+      openImageViewer({ messageId: item.id, index, images: imageAttachments as any[] });
+    },
+    [openImageViewer, item.id, imageAttachments],
+  );
 
-  const handleVideoPress = useCallback((index: number) => {
-    setVideoViewerIndex(index);
-    setVideoViewerVisible(true);
-  }, []);
+  const handleVideoPress = useCallback(
+    (index: number) => {
+      openVideoViewer({
+        messageId: item.id,
+        index,
+        videos: videoAttachments as any[],
+        getSource: getAttachmentSource as any,
+      });
+    },
+    [openVideoViewer, item.id, videoAttachments, getAttachmentSource],
+  );
 
   const handleLongPress = useCallback(() => {
     Vibration.vibrate(30);
-    setContextMenuVisible(true);
-  }, []);
+    openContextMenu({ messageId: item.id, message: item });
+  }, [openContextMenu, item]);
 
   const handleReact = useCallback(
     (emoji: string) => {
       const store = useMessageStore.getState();
       const userId = user?._id || user?.id || '';
-      // Optimistic toggle: add or remove based on current state
       const hasReacted = (item.reactions || []).some(
         (r: any) => r.emoji === emoji && (r.users || []).some((u: any) => u._id === userId || u.usr_id === userId),
       );
@@ -217,50 +210,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
       } else {
         store.addReaction(item.roomId, item.id, emoji, userId);
       }
-      const original = JSON.parse(JSON.stringify(item));
+      const snapshot = {
+        id: item.id,
+        roomId: item.roomId,
+        reactions: item.reactions ? item.reactions.map((r: any) => ({ ...r, users: [...(r.users ?? [])] })) : [],
+      };
       socket?.emit('message:emoji', { messageId: item.id, roomId: item.roomId, emoji }, (ack: any) => {
         if (!ack || ack?.ok === false) {
-          // Rollback: restore original message state
-          useMessageStore.getState().upsetMsg(original);
+          useMessageStore.getState().upsetMsg({ ...item, ...snapshot });
         }
       });
     },
-    [socket, item.id, item.roomId, user, item.reactions],
+    [socket, item, user],
   );
 
-  const handleDelete = useCallback(() => {
-    const original = JSON.parse(JSON.stringify(item));
-    const { deleteMessage } = useMessageStore.getState();
-    deleteMessage(item.roomId, item.id);
-    socket?.emit('message:delete', { messageId: item.id, roomId: item.roomId }, (ack: any) => {
-      if (!ack || ack?.ok === false) {
-        useMessageStore.getState().upsetMsg(original);
-      }
-    });
-  }, [socket, item.id, item.roomId]);
-
-  const handleRecall = useCallback(() => {
-    const original = JSON.parse(JSON.stringify(item));
-    const { recallMessage } = useMessageStore.getState();
-    recallMessage(item.roomId, item.id);
-    socket?.emit('message:recall', { messageId: item.id, roomId: item.roomId }, (ack: any) => {
-      if (!ack || ack?.ok === false) {
-        useMessageStore.getState().upsetMsg(original);
-      }
-    });
-  }, [socket, item.id, item.roomId]);
-
-  const handlePin = useCallback(() => {
-    const newPinned = !item.pinned;
-    const original = JSON.parse(JSON.stringify(item));
-    const { togglePin } = useMessageStore.getState();
-    togglePin(item.roomId, item.id, newPinned);
-    socket?.emit('message:pinned', { messageId: item.id, roomId: item.roomId, pinned: newPinned }, (ack: any) => {
-      if (!ack || ack?.ok === false) {
-        useMessageStore.getState().upsetMsg(original);
-      }
-    });
-  }, [socket, item.id, item.roomId, item.pinned]);
 
   const showTimestamp = item.showAvatar;
   const { isFirstInSenderGroup, isLastInSenderGroup, messageSpacing } = item;
@@ -290,46 +253,26 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
   }
 
   if (item.type === 'system') {
-    return <SystemMessageBubble msg={item} />;
+    return <SystemContent item={item} />;
   }
 
-  // Flashcard deck message — centered card layout
   if (item.type === 'flashcard' && (item as any).desk && !item.isDeleted) {
-    return (
-      <View className={`${messageSpacing} items-center px-4`}>
-        <FlashcardDeckMessageCard deck={(item as any).desk} isSender={item.isMine} />
-        <Text className="text-xs text-gray-400 mt-1">
-          {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}
-        </Text>
-      </View>
-    );
+    return <FlashcardContent item={item} />;
   }
 
-  // Quiz message — centered card layout
   if (item.type === 'quiz' && (item as any).quiz && !item.isDeleted) {
-    return (
-      <View className={`${messageSpacing} items-center px-4`}>
-        <QuizMessageCard
-          quiz={(item as any).quiz}
-          isSender={item.isMine}
-          roomId={item.roomId}
-        />
-        <Text className="text-xs text-gray-400 mt-1">
-          {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}
-        </Text>
-      </View>
-    );
+    return <QuizContent item={item} />;
   }
 
   // Call message — bubble with avatar + reply preview
   if (item.type === 'call' && item.call_history && !item.isDeleted) {
     return (
-      <TouchableWithoutFeedback onLongPress={handleLongPress}>
+      <Pressable onLongPress={handleLongPress} delayLongPress={400}>
         <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
 
           {/* Reply preview */}
           {!!item.reply && !!(item.reply._id || (item.reply as any).id) && (
-            <View className={`mb-1 max-w-[80%] ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
+            <View className={`mb-1 ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
               <ReplyPreview reply={item.reply} isMine={item.isMine} />
             </View>
           )}
@@ -380,7 +323,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
             )}
           </HStack>
         </View>
-      </TouchableWithoutFeedback>
+      </Pressable>
     );
   }
 
@@ -427,50 +370,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
     );
   }
 
-  // Todo Project message — centered card layout
   if (item.type === 'todo_project' && !item.isDeleted) {
-    return (
-      <View className={`${messageSpacing} items-center px-4`}>
-        {item.todoProject ? (
-          <TodoProjectCard
-            project={item.todoProject}
-            isMine={item.isMine}
-            onPress={() => {
-              const projectId = (item.todoProject as any)?.project_id || item.todoProjectId;
-              if (projectId) {
-                navigation.navigate('TodoList', { projectId });
-              }
-            }}
-          />
-        ) : (
-          <View
-            className={`rounded-2xl p-4 border max-w-[280px] ${item.isMine
-              ? 'bg-primary-500/10 border-primary-500/20'
-              : 'bg-gray-100 border-gray-200'
-              }`}
-          >
-            <Text
-              className={`text-sm ${item.isMine ? 'text-primary-900' : 'text-typography-950'
-                }`}
-            >
-              {item.content}
-            </Text>
-          </View>
-        )}
-        <Text className="text-xs text-gray-400 mt-1">
-          {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}
-        </Text>
-      </View>
-    );
+    return <TodoContent item={item} />;
   }
 
   return (
     <>
-      <TouchableWithoutFeedback onLongPress={handleLongPress}>
-        <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
+      <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
           {/* Reply preview */}
           {!!item.reply && !!(item.reply._id || (item.reply as any).id) && (
-            <View className={`mb-1 max-w-[80%] ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
+            <View className={`mb-1 ${item.isMine ? 'mr-8 self-end' : 'ml-8 self-start'}`}>
               <ReplyPreview reply={item.reply} isMine={item.isMine} />
             </View>
           )}
@@ -517,6 +426,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                     <ImageGrid
                       images={imageAttachments}
                       onImagePress={handleImagePress}
+                      onLongPress={handleLongPress}
                       getAttachmentSource={getAttachmentSource}
                     />
                   )}
@@ -524,11 +434,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                     <VideoGrid
                       videos={videoAttachments}
                       onVideoPress={handleVideoPress}
+                      onLongPress={handleLongPress}
                       getAttachmentSource={getAttachmentSource}
                     />
                   )}
                   {showTimestamp && (
-                    <View className="flex-row mt-1">
+                    <Pressable onLongPress={handleLongPress} delayLongPress={400}>
+                      <View className="flex-row mt-1">
                       {item.isMine && (
                         <Text className="text-xs text-gray-400 mr-1">
                           {(item.read_by?.length ?? item.read_by_count ?? 0) > 0 ? '✓✓' : '✓'}
@@ -537,10 +449,12 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                       <Text className="text-xs text-typography-500">
                         {Helpers.formatTime(new Date(item.createdAt))}
                       </Text>
-                    </View>
+                      </View>
+                    </Pressable>
                   )}
                 </View>
               ) : (
+                <Pressable onLongPress={handleLongPress} delayLongPress={400}>
                 <View
                   className={`rounded-2xl px-4 py-2
                     ${item.isMine ? 'bg-primary-500' : 'bg-gray-200'}
@@ -560,20 +474,20 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                     <>
                       <Text
                         className={`text-sm ${item.isMine ? 'text-white' : 'text-typography-950'}`}
-                        numberOfLines={expandedMessages.has(item.id) ? undefined : 20}
+                        numberOfLines={isExpanded ? undefined : 20}
                         ellipsizeMode="tail"
                       >
                         {item.content}
                       </Text>
                       {isLongMessage(item.content) && (
                         <TouchableOpacity
-                          onPress={() => toggleMessageExpansion(item.id)}
+                          onPress={() => toggleExpanded(item.id)}
                           className="mt-1"
                         >
                           <Text
                             className={`text-xs ${item.isMine ? 'text-white/80' : 'text-primary-500'} font-medium`}
                           >
-                            {expandedMessages.has(item.id) ? 'Thu gọn' : 'Xem thêm'}
+                            {isExpanded ? 'Thu gọn' : 'Xem thêm'}
                           </Text>
                         </TouchableOpacity>
                       )}
@@ -654,6 +568,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                     </View>
                   )}
                 </View>
+                </Pressable>
               )}
               {/* Link Preview - below text bubble */}
               {!hasMedia && previewUrl && (
@@ -707,56 +622,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
             <Text className="text-xs text-amber-500 ml-8 mt-0.5">📌 Ghim</Text>
           )}
 
-          <ImageViewerModal
-            visible={imageViewerVisible}
-            images={imageAttachments as any}
-            initialIndex={imageViewerIndex}
-            onClose={() => setImageViewerVisible(false)}
-            getAttachmentSource={getAttachmentSource as any}
-          />
-          <VideoViewerModal
-            visible={videoViewerVisible}
-            videos={videoAttachments as any}
-            initialIndex={videoViewerIndex}
-            onClose={() => setVideoViewerVisible(false)}
-            getAttachmentSource={getAttachmentSource as any}
-          />
         </View>
-      </TouchableWithoutFeedback>
-
-      {/* Context Menu */}
-      <MessageContextMenu
-        visible={contextMenuVisible}
-        message={item}
-        isMine={item.isMine}
-        onClose={() => setContextMenuVisible(false)}
-        onReply={() => onReply?.(item)}
-        onReact={handleReact}
-        onOpenReactionPicker={() => {
-          setContextMenuVisible(false);
-          setReactionPickerVisible(true);
-        }}
-        onCopy={() => { }}
-        onPin={handlePin}
-        onDelete={handleDelete}
-        onRecall={item.isMine ? handleRecall : undefined}
-        onTranslate={item.type === 'text' && !!item.content ? () => {
-          // Open AI actions modal for translate
-          setContextMenuVisible(false);
-        } : undefined}
-        onSummarize={(item.type === 'file' || (item.attachments?.length ?? 0) > 0) ? () => {
-          // Open AI actions modal for summarize
-          setContextMenuVisible(false);
-        } : undefined}
-      />
-
-      {/* Reaction Picker */}
-      <ReactionsPicker
-        visible={reactionPickerVisible}
-        message={item}
-        onReact={handleReact}
-        onClose={() => setReactionPickerVisible(false)}
-      />
     </>
   );
 }, (prev, next) => {
@@ -771,11 +637,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
     prev.item.isLastInSenderGroup === next.item.isLastInSenderGroup &&
     prev.item.isLastInDateGroup === next.item.isLastInDateGroup &&
     prev.item.messageSpacing === next.item.messageSpacing &&
-    JSON.stringify(prev.item.hiddenBy) === JSON.stringify(next.item.hiddenBy) &&
-    JSON.stringify(prev.item.reactions) === JSON.stringify(next.item.reactions) &&
-    JSON.stringify(prev.item.read_by) === JSON.stringify(next.item.read_by) &&
-    JSON.stringify(prev.item.attachments) === JSON.stringify(next.item.attachments) &&
     prev.item.read_by_count === next.item.read_by_count &&
+    sameStringArr(prev.item.hiddenBy as string[], next.item.hiddenBy as string[]) &&
+    sameReactions(prev.item.reactions as any, next.item.reactions as any) &&
+    sameIds(prev.item.read_by as any, next.item.read_by as any) &&
+    sameAttachments(prev.item.attachments as any, next.item.attachments as any) &&
     prev.onReply === next.onReply
   );
 });
@@ -819,10 +685,10 @@ const MessageItem: React.FC<MessageItemProps> = memo(({ item, onReply }) => {
     p.isDeleted === n.isDeleted &&
     p.pinned === n.pinned &&
     p.read_by_count === n.read_by_count &&
-    JSON.stringify(p.reactions) === JSON.stringify(n.reactions) &&
-    JSON.stringify(p.read_by) === JSON.stringify(n.read_by) &&
-    JSON.stringify(p.hiddenBy) === JSON.stringify(n.hiddenBy) &&
-    JSON.stringify(p.attachments) === JSON.stringify(n.attachments)
+    sameReactions(p.reactions as any, n.reactions as any) &&
+    sameIds(p.read_by as any, n.read_by as any) &&
+    sameStringArr(p.hiddenBy as string[], n.hiddenBy as string[]) &&
+    sameAttachments(p.attachments as any, n.attachments as any)
   );
 });
 
