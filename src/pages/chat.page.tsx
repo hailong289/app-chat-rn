@@ -9,6 +9,7 @@ import React, {
 import {
   View,
   Text,
+  FlatList,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
@@ -16,7 +17,6 @@ import {
   NativeScrollEvent,
   StyleSheet,
 } from 'react-native';
-import { FlatList } from 'react-native-gesture-handler';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import HeaderChatComponent from '../components/headers/headers-chat.component';
@@ -55,6 +55,10 @@ const ChatPage: React.FC = () => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  // Ref-based "at bottom" for the auto-scroll effect — avoids state flapping.
+  const isAtBottomRef = useRef(true);
+  // When true, every content-size change will scroll to bottom (until user drags).
+  const pendingInitialScrollRef = useRef(true);
 
   const paramRoomId = (route.params as { roomId: string })?.roomId ?? '';
   const { socket } = useSocket();
@@ -85,6 +89,8 @@ const ChatPage: React.FC = () => {
     hasMoreOlderRef.current = true;
     atTopRef.current = false;
     initialScrollDoneRef.current = false;
+    pendingInitialScrollRef.current = true;
+    isAtBottomRef.current = true;
   }, [chatId]);
 
   useEffect(() => {
@@ -94,21 +100,15 @@ const ChatPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId]);
 
-  useEffect(() => {
-    if (isLoadingMessages || chatData.length === 0) return;
-    if (initialScrollDoneRef.current) return;
-    initialScrollDoneRef.current = true;
-    handleScrollToEnd(false);
-  }, [isLoadingMessages, chatData.length, handleScrollToEnd]);
-
+  // Auto-scroll when a new message arrives and user is already at the bottom.
   const chatDataLengthRef = useRef(chatData.length);
   useEffect(() => {
     const prevLen = chatDataLengthRef.current;
     chatDataLengthRef.current = chatData.length;
-    if (chatData.length > prevLen && isAtBottom) {
+    if (chatData.length > prevLen && isAtBottomRef.current) {
       handleScrollToEnd(true);
     }
-  }, [chatData.length, isAtBottom, handleScrollToEnd]);
+  }, [chatData.length, handleScrollToEnd]);
 
   // Listen for real-time messages (including reply data) from socket
   useEffect(() => {
@@ -253,7 +253,9 @@ const ChatPage: React.FC = () => {
 
       const distanceFromBottom =
         contentSize.height - layoutMeasurement.height - contentOffset.y;
-      setIsAtBottom(distanceFromBottom < 120);
+      const atBottom = distanceFromBottom < 60;
+      isAtBottomRef.current = atBottom;
+      setIsAtBottom(atBottom);
       handleReadScroll(event);
     },
     [handleLoadMore, handleReadScroll],
@@ -321,6 +323,19 @@ const ChatPage: React.FC = () => {
               }
               onScroll={handleScroll}
               scrollEventThrottle={32}
+              // Keep visible item stable when older messages are prepended.
+              maintainVisibleContentPosition={{
+                minIndexForVisible: 1,
+              }}
+              // Scroll to bottom on every content-size change until user drags.
+              onContentSizeChange={() => {
+                if (pendingInitialScrollRef.current && chatData.length > 0) {
+                  flatListRef.current?.scrollToEnd({ animated: false });
+                }
+              }}
+              onScrollBeginDrag={() => {
+                pendingInitialScrollRef.current = false;
+              }}
               contentContainerStyle={[
                 styles.listContent,
                 chatData.length === 0 && styles.listContentEmpty,

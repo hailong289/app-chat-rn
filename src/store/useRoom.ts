@@ -162,24 +162,26 @@ const useRoomStore = create<RoomState>()(
             }
         },
 
-        // ── Get Room Detail ─────────────────────────────────────────────
+        // ── Get Room Detail (cache-only) ────────────────────────────────
         getRoomDetail: async (roomId: string) => {
             try {
-                const response = await RoomService.getRoomDetail(roomId);
-                const room = response.data?.metadata as Room;
-                if (room) {
-                    const normalized = {
-                        ...room,
-                        _id: (room as Room & { _mongoId?: string })._id ?? (room as Room & { _mongoId?: string })._mongoId,
-                    };
-                    set({ room: normalized });
-                    try {
-                        await Rooms.upsert(normalized);
-                    } catch {}
-                    return normalized;
-                }
-                return room;
-            } catch (error) {
+                const cached = await Rooms.getInstance()
+                    .getQuery()
+                    .where('id', '=', roomId)
+                    .getOne() as Room | null;
+                if (!cached) return null;
+                const parsed: Room = {
+                    ...cached,
+                    members: typeof cached.members === 'string'
+                        ? (() => { try { return JSON.parse(cached.members as unknown as string); } catch { return []; } })()
+                        : (cached.members ?? []),
+                    last_message: typeof cached.last_message === 'string'
+                        ? (() => { try { return JSON.parse(cached.last_message as unknown as string); } catch { return cached.last_message; } })()
+                        : cached.last_message,
+                };
+                set({ room: parsed });
+                return parsed;
+            } catch {
                 return null;
             }
         },

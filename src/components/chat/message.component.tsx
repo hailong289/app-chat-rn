@@ -1,13 +1,14 @@
 import { MessageType } from '@/src/types/message.type';
-import React, { useCallback, useMemo, memo, createContext } from 'react';
-import { sameAttachments, sameIds, sameReactions, sameStringArr } from '@/src/libs/equality';
+import React, { useCallback, useMemo, memo, createContext, useRef } from 'react';
+import { sameAttachments, sameIds, sameMessageFields, sameReactions, sameStringArr } from '@/src/libs/equality';
 import {
   View,
   Text,
   TouchableOpacity,
-  Pressable,
   Vibration,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { HStack } from '../ui/hstack';
 import Helpers from '@/src/libs/helpers';
 import ImageGrid from './image-grid.component';
@@ -57,36 +58,39 @@ export const groupMessagesWithSeparators = (
 ): ChatMessageItem[] => {
   if (messages.length === 0) return [];
 
-  // Step 1: Group messages by date
-  const dateGroups: MessageType[][] = [];
+  // Step 1: Group messages by date — key by date string so separator id is
+  // stable even when older messages are prepended.
+  const dateGroups: { key: string; msgs: MessageType[] }[] = [];
   let currentGroup: MessageType[] = [];
-  let lastDate: string | null = null;
+  let lastDateKey: string | null = null;
 
   messages.forEach((msg) => {
     const date = new Date(msg.createdAt);
     const dateKey = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 
-    if (lastDate !== null && lastDate !== dateKey) {
-      dateGroups.push(currentGroup);
+    if (lastDateKey !== null && lastDateKey !== dateKey) {
+      dateGroups.push({ key: lastDateKey, msgs: currentGroup });
       currentGroup = [];
     }
     currentGroup.push(msg);
-    lastDate = dateKey;
+    lastDateKey = dateKey;
   });
-  if (currentGroup.length > 0) dateGroups.push(currentGroup);
+  if (currentGroup.length > 0 && lastDateKey) {
+    dateGroups.push({ key: lastDateKey, msgs: currentGroup });
+  }
 
   // Step 2: Build flat list with date separators and sender grouping metadata
   const items: ChatMessageItem[] = [];
 
-  dateGroups.forEach((group) => {
+  dateGroups.forEach(({ key: dateKey, msgs: group }) => {
     if (group.length === 0) return;
 
-    const firstMsg = group[0];
     items.push({
       kind: 'date',
-      id: `date-${firstMsg.id}`,
-      label: Helpers.formatDateMessage(new Date(firstMsg.createdAt)),
-      rawDate: firstMsg.createdAt,
+      // Stable key: based on date string, not first message id.
+      id: `date-${dateKey}`,
+      label: Helpers.formatDateMessage(new Date(group[0].createdAt)),
+      rawDate: group[0].createdAt,
     });
 
     group.forEach((msg, idx) => {
@@ -193,10 +197,22 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
     [openVideoViewer, item.id, videoAttachments, getAttachmentSource],
   );
 
+  // Use a ref so the callback identity stays stable even as item data changes.
+  const itemRef = useRef(item);
+  itemRef.current = item;
   const handleLongPress = useCallback(() => {
     Vibration.vibrate(30);
-    openContextMenu({ messageId: item.id, message: item });
-  }, [openContextMenu, item]);
+    openContextMenu({ messageId: itemRef.current.id, message: itemRef.current });
+  }, [openContextMenu]);
+
+  // GestureHandler LongPress — does not steal scroll/pan unlike Pressable.
+  const longPressGesture = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(400)
+        .onStart(() => runOnJS(handleLongPress)()),
+    [handleLongPress],
+  );
 
   const handleReact = useCallback(
     (emoji: string) => {
@@ -267,7 +283,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
   // Call message — bubble with avatar + reply preview
   if (item.type === 'call' && item.call_history && !item.isDeleted) {
     return (
-      <Pressable onLongPress={handleLongPress} delayLongPress={400}>
+      <GestureDetector gesture={longPressGesture}>
         <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
 
           {/* Reply preview */}
@@ -323,7 +339,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
             )}
           </HStack>
         </View>
-      </Pressable>
+      </GestureDetector>
     );
   }
 
@@ -439,8 +455,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                     />
                   )}
                   {showTimestamp && (
-                    <Pressable onLongPress={handleLongPress} delayLongPress={400}>
-                      <View className="flex-row mt-1">
+                    <View className="flex-row mt-1">
                       {item.isMine && (
                         <Text className="text-xs text-gray-400 mr-1">
                           {(item.read_by?.length ?? item.read_by_count ?? 0) > 0 ? '✓✓' : '✓'}
@@ -449,12 +464,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                       <Text className="text-xs text-typography-500">
                         {Helpers.formatTime(new Date(item.createdAt))}
                       </Text>
-                      </View>
-                    </Pressable>
+                    </View>
                   )}
                 </View>
               ) : (
-                <Pressable onLongPress={handleLongPress} delayLongPress={400}>
+                <GestureDetector gesture={longPressGesture}>
                 <View
                   className={`rounded-2xl px-4 py-2
                     ${item.isMine ? 'bg-primary-500' : 'bg-gray-200'}
@@ -568,7 +582,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                     </View>
                   )}
                 </View>
-                </Pressable>
+                </GestureDetector>
               )}
               {/* Link Preview - below text bubble */}
               {!hasMedia && previewUrl && (
@@ -628,21 +642,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
 }, (prev, next) => {
   return (
     prev.item.id === next.item.id &&
-    prev.item.content === next.item.content &&
-    prev.item.status === next.item.status &&
-    prev.item.isDeleted === next.item.isDeleted &&
-    prev.item.pinned === next.item.pinned &&
     prev.item.showAvatar === next.item.showAvatar &&
     prev.item.isFirstInSenderGroup === next.item.isFirstInSenderGroup &&
     prev.item.isLastInSenderGroup === next.item.isLastInSenderGroup &&
     prev.item.isLastInDateGroup === next.item.isLastInDateGroup &&
     prev.item.messageSpacing === next.item.messageSpacing &&
-    prev.item.read_by_count === next.item.read_by_count &&
-    sameStringArr(prev.item.hiddenBy as string[], next.item.hiddenBy as string[]) &&
-    sameReactions(prev.item.reactions as any, next.item.reactions as any) &&
-    sameIds(prev.item.read_by as any, next.item.read_by as any) &&
-    sameAttachments(prev.item.attachments as any, next.item.attachments as any) &&
-    prev.onReply === next.onReply
+    prev.onReply === next.onReply &&
+    sameMessageFields(prev.item, next.item)
   );
 });
 
@@ -680,15 +686,7 @@ const MessageItem: React.FC<MessageItemProps> = memo(({ item, onReply }) => {
     p.isLastInSenderGroup === n.isLastInSenderGroup &&
     p.isLastInDateGroup === n.isLastInDateGroup &&
     p.messageSpacing === n.messageSpacing &&
-    p.content === n.content &&
-    p.status === n.status &&
-    p.isDeleted === n.isDeleted &&
-    p.pinned === n.pinned &&
-    p.read_by_count === n.read_by_count &&
-    sameReactions(p.reactions as any, n.reactions as any) &&
-    sameIds(p.read_by as any, n.read_by as any) &&
-    sameStringArr(p.hiddenBy as string[], n.hiddenBy as string[]) &&
-    sameAttachments(p.attachments as any, n.attachments as any)
+    sameMessageFields(p, n)
   );
 });
 

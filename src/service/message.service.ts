@@ -5,7 +5,7 @@ import apiService from "./api.service";
 export default class MessageService {
     // ── Get Messages ───────────────────────────────────────────────────
     public static async getMessages({ roomId, queryParams }: GetMessageType) {
-      return await apiService.withTimeout(5000).get<ApiResponse<MessageType[]>>(`/chat/messages/${roomId}`, queryParams);
+      return await apiService.withTimeout(30000).get<ApiResponse<MessageType[]>>(`/chat/messages/${roomId}`, queryParams);
     }
 
     // ── Delete Message ─────────────────────────────────────────────────

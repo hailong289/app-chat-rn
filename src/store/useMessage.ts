@@ -380,7 +380,7 @@ const useMessageStore = create<MessageState>()(
                 try {
                     const response = await MessageService.getMessages({
                         roomId: chatId,
-                        queryParams: { limit },
+                        queryParams: { limit, type: "new" },
                     });
                     const fresh = (response.data.metadata || []).map(
                         (msg: unknown) => sanitizeMessageFromAPI({ ...(msg as object), roomId: chatId }),
@@ -390,10 +390,8 @@ const useMessageStore = create<MessageState>()(
                     for (const msg of fresh) {
                         await Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(msg as MessageType));
                     }
-
                     setMessages(fresh);
                 } catch {
-                    // 2. Fallback: load from SQLite cache
                     try {
                         const rows = (await Messages.getInstance()
                             .getQuery()
