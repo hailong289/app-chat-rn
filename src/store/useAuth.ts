@@ -20,6 +20,7 @@ import {
   normalizeAuthUser,
 } from "../libs/normalize-auth-user";
 import { resolveMediaUrl } from "../libs/resolve-media-url";
+import { isApiErrorBody } from "../libs/auth-register";
 
 // ── Token Storage helpers (AsyncStorage) ─────────────────────────────
 const ACCESS_TOKEN_KEY = "accessToken";
@@ -110,6 +111,7 @@ const useAuthStore = create<AuthState>()(
         payload.error?.(error);
       } finally {
         release?.();
+        authPromise = null;
       }
     },
 
@@ -122,7 +124,7 @@ const useAuthStore = create<AuthState>()(
           type: payload.type,
         });
         const data = response.data;
-        if (data?.statusCode && data.statusCode >= 400) {
+        if (isApiErrorBody(data)) {
           payload.error?.({
             message: data.message,
             statusCode: data.statusCode,
@@ -144,12 +146,23 @@ const useAuthStore = create<AuthState>()(
       let release!: () => void;
       authPromise = new Promise<void>((r) => { release = r; });
       try {
-        const response = await AuthService.register(payload);
-        const metadata = response.data?.metadata as AuthMetadata;
+        const { success: _s, error: _e, ...registerBody } = payload;
+        const response = await AuthService.register(registerBody);
+        const data = response.data;
+        if (isApiErrorBody(data)) {
+          payload.error?.({
+            message: data.message,
+            statusCode: data.statusCode,
+            reasonStatusCode: data.reasonStatusCode,
+          });
+          return;
+        }
+        const metadata = data?.metadata as AuthMetadata;
         const accessToken = metadata?.accessToken || null;
+        const dateNow = Math.floor(Date.now() / 1000);
         await tokenStorage.set(accessToken);
         const registerUser = normalizeAuthUser(
-          extractAuthUserRaw(response.data) ??
+          extractAuthUserRaw(data) ??
             (metadata?.user as Record<string, unknown> | undefined),
         );
         set({
@@ -160,15 +173,16 @@ const useAuthStore = create<AuthState>()(
             accessToken,
             refreshToken: null,
             expiresIn: metadata?.expiresIn || 0,
-            expiredAt: Math.floor(Date.now() / 1000) + (metadata?.expiresIn || 0),
+            expiredAt: dateNow + (metadata?.expiresIn || 0),
           },
         });
-        payload.success?.(response.data);
+        payload.success?.(data);
       } catch (error) {
         set({ isAuthenticated: false, isLoading: false, user: null, tokens: null });
         payload.error?.(error);
       } finally {
         release?.();
+        authPromise = null;
       }
     },
 
@@ -308,12 +322,22 @@ const useAuthStore = create<AuthState>()(
     verifyOtp: async (payload: PayloadVerifyOtp) => {
       set({ isLoading: true });
       try {
-        const response = await AuthService.verifyOtp(payload);
-        set({ isLoading: false });
-        payload.success?.(response.data?.metadata);
+        const { indicator, otp, type } = payload;
+        const response = await AuthService.verifyOtp({ indicator, otp, type });
+        const data = response.data;
+        if (isApiErrorBody(data)) {
+          payload.error?.({
+            message: data.message,
+            statusCode: data.statusCode,
+            reasonStatusCode: data.reasonStatusCode,
+          });
+          return;
+        }
+        payload.success?.(data.metadata ?? undefined);
       } catch (error) {
-        set({ isLoading: false });
         payload.error?.(error);
+      } finally {
+        set({ isLoading: false });
       }
     },
 

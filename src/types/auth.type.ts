@@ -46,11 +46,17 @@ export interface PayloadForgotPassword {
     error: (error?: any) => void;
 }
 
+/** Metadata từ POST /notifications/verify-otp (proxy auth gRPC). */
+export interface VerifyOtpMetadata {
+    tempRegisterToken?: string;
+    accessToken?: string;
+}
+
 export interface PayloadVerifyOtp {
     indicator: string;
     otp: string;
-    type: "reset-password" | "verify-account" | "register";
-    success: (data?: any) => void;
+    type: "reset-password" | "register";
+    success: (data?: VerifyOtpMetadata) => void;
     error: (error?: any) => void;
 }
 

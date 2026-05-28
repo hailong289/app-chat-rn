@@ -5,6 +5,7 @@ import { Input, InputField } from "../ui/input";
 import { useState } from "react";
 import useAuthStore from "@/src/store/useAuth";
 import { Toast } from "toastify-react-native";
+import { getApiErrorMessage } from "@/src/utils/apiError";
 
 
 export const OtpModal = ({
@@ -43,7 +44,7 @@ export const OtpModal = ({
                 Toast.show({
                     type: 'error',
                     text1: 'Xác thực OTP thất bại',
-                    text2: error?.message || 'Vui lòng thử lại.',
+                    text2: getApiErrorMessage(error, 'Vui lòng thử lại.'),
                     position: 'top',
                     visibilityTime: 2000,
                     autoHide: true,

@@ -27,6 +27,8 @@ import { Toast } from "toastify-react-native";
 import { useFirebase } from "@/src/providers/firebase.provider";
 import OtpInput from "@/src/components/auth/otp-input";
 import { getApiErrorMessage } from "@/src/utils/apiError";
+import { normalizeAuthEmail } from "@/src/libs/auth-register";
+import type { VerifyOtpMetadata } from "@/src/types/auth.type";
 
 const OTP_COUNTDOWN = 60;
 
@@ -121,7 +123,7 @@ const RegisterPage = () => {
         savedFormRef.current = parsed as typeof form;
 
         sendOtp({
-            email: form.email,
+            email: normalizeAuthEmail(form.email),
             type: "register",
             success: () => {
                 Toast.show({ type: "success", text1: "Đã gửi OTP đến email của bạn" });
@@ -142,7 +144,7 @@ const RegisterPage = () => {
     const handleResendOtp = () => {
         if (countdown > 0 || isLoading || !savedFormRef.current) return;
         sendOtp({
-            email: savedFormRef.current.email,
+            email: normalizeAuthEmail(savedFormRef.current.email),
             type: "register",
             success: () => {
                 Toast.show({ type: "success", text1: "Đã gửi lại OTP" });
@@ -166,31 +168,36 @@ const RegisterPage = () => {
         const saved = savedFormRef.current;
 
         verifyOtp({
-            indicator: saved.email,
+            indicator: normalizeAuthEmail(saved.email),
             otp,
             type: "register",
-            success: (data: any) => {
+            success: (data?: VerifyOtpMetadata) => {
                 const tempRegisterToken = data?.tempRegisterToken;
                 if (!tempRegisterToken) {
-                    setOtpError("Mã OTP không hợp lệ");
+                    setOtpError(
+                        "Xác thực OTP chưa hoàn tất. Vui lòng thử lại.",
+                    );
                     return;
                 }
                 setOtpModalOpen(false);
-                // Register immediately with tempRegisterToken
+                // Register immediately after OTP verify.
                 register({
                     fullname: saved.fullname,
                     tempRegisterToken,
                     password: saved.password,
                     gender: saved.gender as "male" | "female" | "other",
                     dateOfBirth: Helpers.formatDateToString(saved.dateOfBirth, "YYYY-MM-DD"),
-                    fcmToken: fcmToken,
+                    fcmToken: fcmToken ?? null,
                     success: () => {
                         Toast.show({ type: "success", text1: "Đăng ký thành công" });
                     },
                     error: (err: any) => {
                         const msg = getApiErrorMessage(err, "Đăng ký thất bại");
                         if (msg.includes("hết hạn") || msg.includes("expired")) {
-                            Toast.show({ type: "error", text1: "Phiên đăng ký đã hết hạn. Vui lòng thực hiện lại." });
+                            Toast.show({
+                                type: "error",
+                                text1: "Phiên đăng ký đã hết hạn. Vui lòng thực hiện lại.",
+                            });
                         } else {
                             Toast.show({ type: "error", text1: msg });
                         }
@@ -376,7 +383,9 @@ const RegisterPage = () => {
                                 isDisabled={isLoading}
                             >
                                 {isLoading && <ButtonSpinner color="gray" />}
-                                <ButtonText className="text-white text-lg">Đăng ký</ButtonText>
+                                <ButtonText className="text-white text-lg">
+                                    {isLoading ? "Đang xử lý..." : "Tiếp tục"}
+                                </ButtonText>
                             </Button>
 
                             <Text className="text-center text-gray-500 mt-4">

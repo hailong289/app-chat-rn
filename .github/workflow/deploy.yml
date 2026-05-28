@@ -1,0 +1,106 @@
+name: Android & iOS CI/CD with Firebase Distribution
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Chọn platform để build (ios/android)"
+        required: true
+        default: "ios"
+        type: choice
+        options:
+          - ios
+          - android
+
+jobs:
+  android:
+    name: Build Android & Distribute
+    runs-on: ubuntu-latest
+    # if: github.event.inputs.target == 'android' --- IGNORE ---
+    environment: FIREBASE
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.0'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Prebuild Android
+        run: npx expo prebuild
+
+      #link react-native-vector-icons
+      - name: Link react-native-vector-icons
+        run: npm run native:asset
+
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Build release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease
+
+      - name: Upload artifact to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          groups: testers
+          file: android/app/build/outputs/apk/release/app-release.apk
+
+  ios:
+    name: Build iOS & Distribute
+    runs-on: ubuntu-latest
+    if: github.event.inputs.target == 'ios'
+    environment: FIREBASE
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Run EAS Build (iOS)
+        run: eas build --platform ios --profile preview --non-interactive --wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Download iOS artifact
+        run: |
+          url=$(eas build:list --platform ios --status finished --limit 1 --non-interactive --json | jq -r '.[0].artifacts.buildUrl')
+          curl -L -o AppChat.ipa "$url"
+
+      - name: Upload artifact to Firebase App Distribution
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: ${{ secrets.FIREBASE_IOS_APP_ID }}   # ✅ sửa lại appId
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          groups: testers
+          file: AppChat.ipa

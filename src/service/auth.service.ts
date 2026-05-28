@@ -1,4 +1,5 @@
-import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword, PayloadSendOtp, PayloadVerifyOtp, UpdatePasswordPayload, UpdateProfilePayload } from "../types/auth.type";
+import { buildRegisterRequestBody } from "../libs/auth-register";
+import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, PayloadResetPassword, PayloadSendOtp, PayloadVerifyOtp, UpdatePasswordPayload, UpdateProfilePayload, VerifyOtpMetadata } from "../types/auth.type";
 import ApiResponse from "../types/response.type";
 import apiService from "./api.service";
 
@@ -10,12 +11,18 @@ export default class AuthService {
 
     // ── Send OTP ───────────────────────────────────────────────────────
     public static async sendOtp(payload: Pick<PayloadSendOtp, 'email' | 'type'>) {
-        return await apiService.post('/auth/send-otp', payload);
+        return await apiService.post<ApiResponse<null>>(
+            '/notifications/send-otp',
+            payload,
+        );
     }
 
     // ── Register ───────────────────────────────────────────────────────
     public static async register(payload: Omit<PayloadRegister, 'success' | 'error'>) {
-        return await apiService.post<ApiResponse<AuthMetadata>>('/auth/register', payload);
+        return await apiService.post<ApiResponse<AuthMetadata>>(
+            '/auth/register',
+            buildRegisterRequestBody(payload),
+        );
     }
 
     // ── Logout ─────────────────────────────────────────────────────────
@@ -35,7 +42,11 @@ export default class AuthService {
 
     // ── Verify OTP ─────────────────────────────────────────────────────
     public static async verifyOtp(payload: Omit<PayloadVerifyOtp, 'success' | 'error'>) {
-        return await apiService.post<ApiResponse<any>>('/auth/verify-otp', payload);
+        const { indicator, otp, type } = payload;
+        return await apiService.post<ApiResponse<VerifyOtpMetadata>>(
+            '/notifications/verify-otp',
+            { indicator, otp, type },
+        );
     }
 
     // ── Reset Password ─────────────────────────────────────────────────
