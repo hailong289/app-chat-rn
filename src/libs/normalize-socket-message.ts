@@ -53,6 +53,7 @@ export function prepareMessageFromSocket(
     ...raw,
     id,
     roomId,
+    _lean: raw._lean === true,
     createdAt:
       (typeof raw.createdAt === 'string' && raw.createdAt) ||
       new Date().toISOString(),
