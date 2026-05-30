@@ -138,6 +138,7 @@ export type MessageType = {
   | "uploading"
   | "uploaded"
   | "recalled";
+  _lean?: boolean;
   room_event?: RoomEventType | null;
   call_history?: CallHistoryType | null;
   placeholder?: string;

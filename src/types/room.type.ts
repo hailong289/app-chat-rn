@@ -57,9 +57,12 @@ export interface Room {
 
 export type RoomMembers = {
     id: string;
+    user_id?: string;
     name: string | null;
     role: string | null;
     avatar: string | null;
+    last_delivered_id?: string | null;
+    last_read_id?: string | null;
 };
 
 export interface PayloadGetRoomsSuccess {
