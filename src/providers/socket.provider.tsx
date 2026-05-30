@@ -53,6 +53,8 @@ export const SocketEvents = {
 
   // Read events
   MARK_READ: "mark:read",
+  MESSAGE_DELIVERED: "message:delivered",
+  MESSAGE_STATUS: "message:status",
 
   // Error
   ERROR_MSG: "error:message",
