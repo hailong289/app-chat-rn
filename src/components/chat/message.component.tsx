@@ -19,7 +19,9 @@ import { ReplyPreview } from './reply-preview';
 import { useSocket } from '@/src/providers/socket.provider';
 import useAuthStore from '@/src/store/useAuth';
 import useMessageStore from '@/src/store/useMessage';
+import useRoomStore from '@/src/store/useRoom';
 import useChatUIStore from '@/src/store/useChatUIStore';
+import { deriveStatus, deriveGroupCounts } from '@/src/store/lib/messageStatus';
 import CallBubble from './call-bubble';
 import { MessageReactions } from './message-reactions';
 import LinkPreview from './LinkPreview';
@@ -133,6 +135,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
   const isExpanded = useChatUIStore((s) => s.expandedMessages.has(item.id));
   const toggleExpanded = useChatUIStore((s) => s.toggleExpanded);
   const hiddenByMe = item.hiddenBy?.includes(user?._id || '') ?? false;
+
+  // ── 4-state delivery/read tick + per-recipient group counts ──
+  const room = useRoomStore((s) => s.room);
+  const myId = user?._id;
+  // Select the STABLE messages array reference, then memo-map to ids — never
+  // return a freshly-mapped array directly from a selector (infinite-loop trap).
+  const msgs = useMessageStore((s) =>
+    room ? s.messagesRoom[room.id]?.messages : undefined,
+  );
+  const order = useMemo(() => (msgs ? msgs.map((m) => m.id) : []), [msgs]);
+  const derived =
+    room && myId ? deriveStatus(item as any, room as any, myId, order) : null;
 
   const { imageAttachments, videoAttachments, hasMedia } = useMemo(() => {
     const list = (item.attachments ?? []) as Attachment[];
@@ -456,10 +470,14 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                   )}
                   {showTimestamp && (
                     <View className="flex-row mt-1">
-                      {item.isMine && (
-                        <Text className="text-xs text-gray-400 mr-1">
-                          {(item.read_by?.length ?? item.read_by_count ?? 0) > 0 ? '✓✓' : '✓'}
-                        </Text>
+                      {item.isMine && derived === 'read' && (
+                        <Text className="text-xs text-blue-500 mr-1">✓✓</Text>
+                      )}
+                      {item.isMine && derived === 'delivered' && (
+                        <Text className="text-xs text-gray-400 mr-1">✓✓</Text>
+                      )}
+                      {item.isMine && (derived === 'sent' || derived === null) && (
+                        <Text className="text-xs text-gray-400 mr-1">✓</Text>
                       )}
                       <Text className="text-xs text-typography-500">
                         {Helpers.formatTime(new Date(item.createdAt))}
@@ -570,9 +588,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                   {showTimestamp && (
                     <View className={`flex-row mt-1 ${item.isMine ? 'justify-end' : 'justify-start'}`}>
                       {item.isMine && item.status !== 'failed' && item.status !== 'uploading' && item.status !== 'pending' && (
-                        <Text className={`text-xs mr-1 ${item.isMine ? 'text-white/60' : 'text-gray-400'}`}>
-                          {(item.read_by?.length ?? item.read_by_count ?? 0) > 0 ? '✓✓' : '✓'}
-                        </Text>
+                        <>
+                          {derived === 'read' && (
+                            <Text className="text-xs mr-1 text-white">✓✓</Text>
+                          )}
+                          {derived === 'delivered' && (
+                            <Text className="text-xs mr-1 text-white/60">✓✓</Text>
+                          )}
+                          {(derived === 'sent' || derived === null) && (
+                            <Text className="text-xs mr-1 text-white/60">✓</Text>
+                          )}
+                        </>
                       )}
                       <Text
                         className={`text-xs ${item.isMine ? 'text-white/80' : 'text-typography-500'}`}
@@ -627,6 +653,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
               )}
             </HStack>
           )}
+
+          {/* Per-recipient delivered/read counts — group rooms only, on last of my messages */}
+          {item.isMine && item.isLastInDateGroup && room?.type === 'group' && myId && (() => {
+            const c = deriveGroupCounts(item as any, room as any, myId, order);
+            return c.total > 0 ? (
+              <Text className="text-xs text-gray-400 mr-8 mt-0.5 self-end">
+                {`Đã nhận ${c.deliveredCount}/${c.total} · Đã đọc ${c.readCount}/${c.total}`}
+              </Text>
+            ) : null;
+          })()}
 
           {/* Reactions */}
           <MessageReactions reactions={item.reactions as any} onReact={handleReact} />
