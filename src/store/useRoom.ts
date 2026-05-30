@@ -39,6 +39,7 @@ interface RoomState {
     fetchAndUpdateRoom: (roomId: string) => Promise<void>;
     updateRoomSocket: (data: Room) => void;
     setRoomReaded: (data: { lastMessageId: string; roomId: string }) => Promise<void>;
+    applyMessageStatus: (evt: { roomId: string; userId: string; kind: "delivered" | "read"; upToMsgId: string }) => void;
     markMessageAsRead: (roomId: string, messageId: string, socket: any) => void;
     roomDeleteSocket: (data: { roomId: string }) => void;
     roomTypingSocket: (data: { isTyping: boolean; socket: any }) => void;
@@ -389,6 +390,28 @@ const useRoomStore = create<RoomState>()(
                         ? { ...state.room, last_read_id: lastMessageId, is_read: true, unread_count: 0 }
                         : state.room,
             }));
+        },
+
+        // ── Apply per-member delivered/read watermark from socket ──────
+        applyMessageStatus: (evt) => {
+            set((state) => {
+                const rooms = state.rooms.map((r) => {
+                    if (r.id !== evt.roomId && r.roomId !== evt.roomId) return r;
+                    const members = (r.members ?? []).map((m: any) => {
+                        const mid = String(m.id ?? m.user_id ?? "");
+                        if (mid !== String(evt.userId)) return m;
+                        return evt.kind === "read"
+                            ? { ...m, last_read_id: evt.upToMsgId, last_delivered_id: evt.upToMsgId }
+                            : { ...m, last_delivered_id: evt.upToMsgId };
+                    });
+                    return { ...r, members };
+                });
+                const room =
+                    state.room && (state.room.id === evt.roomId || state.room.roomId === evt.roomId)
+                        ? rooms.find((r) => r.id === state.room!.id || r.roomId === state.room!.roomId) ?? state.room
+                        : state.room;
+                return { rooms, room };
+            });
         },
 
         // ── Emit mark:read socket + update local state ─────────────────
