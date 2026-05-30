@@ -13,6 +13,7 @@ import UploadService from "../service/upload.service";
 import { Messages } from "../models/messages.model";
 import useAuthStore from "./useAuth";
 import useRoomStore from "./useRoom";
+import { mergeLeanSafe } from "./lib/messageStatus";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -579,7 +580,7 @@ const useMessageStore = create<MessageState>()(
             );
             if (!prepared) return;
 
-            const msg = { ...prepared, status: "delivered" } as MessageType;
+            const msg = { ...prepared } as MessageType;
             const sanitized = sanitizeMessageFromAPI(msg);
 
             // Persist to DB
@@ -592,9 +593,9 @@ const useMessageStore = create<MessageState>()(
 
             let updatedMessages: MessageType[];
             if (existingIndex === -1) {
-                updatedMessages = [...prevMessages, sanitized];
+                updatedMessages = [...prevMessages, { ...sanitized, status: sanitized.status ?? "sent" } as MessageType];
             } else {
-                updatedMessages = prevMessages.map((m, idx) => idx === existingIndex ? sanitized : m);
+                updatedMessages = prevMessages.map((m, idx) => idx === existingIndex ? (mergeLeanSafe(m, sanitized) as MessageType) : m);
             }
 
             set({
