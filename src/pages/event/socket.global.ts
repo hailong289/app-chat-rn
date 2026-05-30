@@ -3,7 +3,10 @@ import { useSocket, SocketEvents } from '../../providers/socket.provider';
 import useMessageStore from '../../store/useMessage';
 import useRoomStore from '../../store/useRoom';
 import useContactStore from '../../store/useContact';
+import useAuthStore from '../../store/useAuth';
 import { resolveCanonicalRoomId } from '../../libs/normalize-socket-message';
+import { makeDeliveredAcker } from '../../libs/useDeliveredAcker';
+import { syncOnOpen } from '../../libs/syncOnOpen';
 
 /**
  * Global socket handlers — mirrors app-chat-fe socketChatEventGlobal.tsx
@@ -189,7 +192,40 @@ export const SocketEventGlobal = () => {
   useEffect(() => {
     if (!chatSocket) return;
 
-    chatSocket.on(SocketEvents.MESSAGE_UPSERT, onMsgUpsert.current);
+    const ackDelivered = makeDeliveredAcker(chatSocket);
+
+    const onMsgStatus = (evt: {
+      roomId: string;
+      userId: string;
+      kind: 'delivered' | 'read';
+      upToMsgId: string;
+    }) => {
+      useRoomStore.getState().applyMessageStatus(evt);
+    };
+
+    const onMsgUpsertAck = (data: unknown) => {
+      onMsgUpsert.current(data);
+      const msg = data as Record<string, any> | null;
+      const myId = useAuthStore.getState().user?.id;
+      const senderId = msg?.sender?.id ?? msg?.sender?._id;
+      if (
+        senderId &&
+        String(senderId) !== String(myId) &&
+        msg?.roomId &&
+        msg?.id
+      ) {
+        ackDelivered(String(msg.roomId), String(msg.id));
+      }
+    };
+
+    const onConnectSync = () => {
+      const activeRoomId = useRoomStore.getState().room?.id;
+      void syncOnOpen(activeRoomId);
+    };
+
+    chatSocket.on(SocketEvents.MESSAGE_UPSERT, onMsgUpsertAck);
+    chatSocket.on(SocketEvents.MESSAGE_STATUS, onMsgStatus);
+    chatSocket.on('connect', onConnectSync);
     chatSocket.on(SocketEvents.MARK_READ, onMsgMarkRead.current);
     chatSocket.on(SocketEvents.MESSAGE_EMOJI, onMsgEmoji.current);
     chatSocket.on(SocketEvents.MESSAGE_PINNED, onMsgPinned.current);
@@ -211,7 +247,9 @@ export const SocketEventGlobal = () => {
 
     return () => {
       clearInterval(heartbeatInterval);
-      chatSocket.off(SocketEvents.MESSAGE_UPSERT, onMsgUpsert.current);
+      chatSocket.off(SocketEvents.MESSAGE_UPSERT, onMsgUpsertAck);
+      chatSocket.off(SocketEvents.MESSAGE_STATUS, onMsgStatus);
+      chatSocket.off('connect', onConnectSync);
       chatSocket.off(SocketEvents.MARK_READ, onMsgMarkRead.current);
       chatSocket.off(SocketEvents.MESSAGE_EMOJI, onMsgEmoji.current);
       chatSocket.off(SocketEvents.MESSAGE_PINNED, onMsgPinned.current);

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import useMessageStore from '../store/useMessage';
 import useRoomStore from '../store/useRoom';
 import { resolveCanonicalRoomId } from '../libs/normalize-socket-message';
+import { syncOnOpen } from '../libs/syncOnOpen';
 
 const LOAD_TIMEOUT_MS = 10_000;
 const MAX_LOAD_ATTEMPTS = 3;
@@ -50,6 +51,8 @@ export function useChatScreen(
           .loadRoomFromCache(myChatId, 20);
         await fetched;
         finishLoading();
+        // Delta-fill any gap missed since last open (best-effort).
+        void syncOnOpen(myChatId);
       } catch (err) {
         if (!isStillActive()) return;
         if (n >= MAX_LOAD_ATTEMPTS - 1) {

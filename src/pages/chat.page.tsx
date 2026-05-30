@@ -115,9 +115,8 @@ const ChatPage: React.FC = () => {
     if (!socket) return;
     const { upsertMessage, upsetMsgError } = useMessageStore.getState();
 
-    const handleUpsert = (msg: Record<string, unknown>) => {
-      void upsertMessage(msg);
-    };
+    // message:upsert is handled once in socket.global.ts (with delivered-ack);
+    // this screen no longer double-subscribes to it.
     const handleError = (payload: any) => {
       upsetMsgError(payload);
     };
@@ -140,7 +139,6 @@ const ChatPage: React.FC = () => {
       void upsertMessage(msg);
     };
 
-    socket.on(SocketEvents.MESSAGE_UPSERT, handleUpsert);
     socket.on(SocketEvents.ERROR_MSG, handleError);
     socket.on(SocketEvents.MESSAGE_RECALL, handleRecall);
     socket.on(SocketEvents.MESSAGE_DELETE, handleDelete);
@@ -148,7 +146,6 @@ const ChatPage: React.FC = () => {
     socket.on(SocketEvents.MESSAGE_PINNED, handlePinned);
 
     return () => {
-      socket.off(SocketEvents.MESSAGE_UPSERT, handleUpsert);
       socket.off(SocketEvents.ERROR_MSG, handleError);
       socket.off(SocketEvents.MESSAGE_RECALL, handleRecall);
       socket.off(SocketEvents.MESSAGE_DELETE, handleDelete);
