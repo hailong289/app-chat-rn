@@ -100,6 +100,7 @@ export interface CallState {
   // Actions
   openCall: (data: any) => void;
   endCall: (data: any) => Promise<void>;
+  releaseLocalCall: () => void;
   eventCall: (event: string, payload: any) => Promise<void>;
   acceptCall: (data: any) => Promise<void>;
   handleCreateLocalStream: () => Promise<void>;

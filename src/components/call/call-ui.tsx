@@ -28,6 +28,7 @@ import {
   getMemberFromStreamKey,
   getOtherParticipant,
 } from '../../libs/call-ui-helpers';
+import { exitCallScreen } from '../../libs/safe-navigation';
 
 let RTCView: any = null;
 try {
@@ -58,6 +59,7 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
     actionToggleTrack,
     setUserIdGhimmed,
     endCall,
+    releaseLocalCall,
     handleCreateLocalStream,
     socket,
   } = useCallStore();
@@ -104,44 +106,68 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
       void useCallStore.getState().eventCall(event, payload);
     };
 
-    const events = [
-      'call:accepted', 'call:answer', 'call:candidate',
-      'call:end', 'call:member-joined', 'call:share-screen',
-      'call:camera-state', 'call:mic-state',
+    const sharedEvents = [
+      'call:end',
+      'call:member-joined',
+      'call:share-screen',
+      'call:busy',
     ];
+    const p2pEvents = ['call:accepted', 'call:answer', 'call:candidate'];
     const handlers: Record<string, (d: any) => void> = {};
-    for (const ev of events) {
+    for (const ev of sharedEvents) {
       const name = ev.replace('call:', '');
       handlers[ev] = onCallEvent(name);
       s.on(ev, handlers[ev]);
     }
 
-    s.on('signal', (payload: any) => {
-      void useCallStore.getState().handleSFUSignal(payload);
-    });
+    if (callMode === 'p2p') {
+      for (const ev of p2pEvents) {
+        const name = ev.replace('call:', '');
+        handlers[ev] = onCallEvent(name);
+        s.on(ev, handlers[ev]);
+      }
+    }
 
-    s.on('call:camera-state', ({ actionUserId, isCameraOn }: any) => {
+    const signalHandler = (payload: any) => {
+      void useCallStore.getState().handleSFUSignal(payload);
+    };
+    if (callMode === 'sfu') {
+      s.on('signal', signalHandler);
+    }
+
+    const cameraStateHandler = ({ actionUserId, isCameraOn }: any) => {
       setCameraOffPeers((prev) => {
         const next = new Set(prev);
         isCameraOn ? next.delete(actionUserId) : next.add(actionUserId);
         return next;
       });
-    });
-    s.on('call:mic-state', ({ actionUserId, isMicOn }: any) => {
+    };
+    const micStateHandler = ({ actionUserId, isMicOn }: any) => {
       setMicOffPeers((prev) => {
         const next = new Set(prev);
         isMicOn ? next.delete(actionUserId) : next.add(actionUserId);
         return next;
       });
-    });
+    };
+    const handoffHandler = () => {
+      releaseLocalCall();
+      exitCallScreen(navigation);
+    };
+
+    s.on('call:camera-state', cameraStateHandler);
+    s.on('call:mic-state', micStateHandler);
+    s.on('call:handoff', handoffHandler);
 
     return () => {
       for (const [ev, handler] of Object.entries(handlers)) s.off(ev, handler);
-      s.off('signal');
-      s.off('call:camera-state');
-      s.off('call:mic-state');
+      if (callMode === 'sfu') {
+        s.off('signal', signalHandler);
+      }
+      s.off('call:camera-state', cameraStateHandler);
+      s.off('call:mic-state', micStateHandler);
+      s.off('call:handoff', handoffHandler);
     };
-  }, [socket, providerSocket]);
+  }, [socket, providerSocket, callMode, releaseLocalCall, navigation]);
 
   const handleEndCall = useCallback(async () => {
     setMoreMenuOpen(false);
@@ -181,16 +207,18 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
       <PipView
         localStream={stream.localStream}
         isMicEnabled={action.isMicEnabled}
-        onTap={() =>
+        onTap={() => {
+          if (!roomId) return;
           navigation.navigate('Call', {
             roomId,
             members,
             callType: mode,
             callMode,
+            status,
             callId: callId ?? undefined,
             isCaller: members.some((m) => m.id === currentUserId && m.is_caller),
-          })
-        }
+          });
+        }}
       />
     );
   }

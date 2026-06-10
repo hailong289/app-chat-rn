@@ -41,6 +41,6 @@ export interface SfuStoreState {
   initSFU: () => Promise<void>;
   handleSFUSignal: (payload: any) => Promise<void>;
   replaceTracksInProducers: (newStream: any) => Promise<void>;
-  teardownSfu: () => void;
+  teardownSfu: (options?: { emitLeave?: boolean }) => void;
   produceLocalStream: (localStream: any) => Promise<void>;
 }

@@ -91,11 +91,12 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
       }
     },
 
-    teardownSfu: () => {
+    teardownSfu: (options = {}) => {
       const { sfu } = get();
       const { socket, roomId } = useCallStore.getState();
+      const shouldEmitLeave = options.emitLeave !== false;
 
-      if (roomId && socket) {
+      if (shouldEmitLeave && roomId && socket) {
         socket.emit('signal', { type: 'leave', roomId, target: 'sfu' });
       }
 

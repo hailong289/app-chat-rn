@@ -146,7 +146,9 @@ export const SocketEventGlobal = () => {
   });
 
   const onCallAccepted = useRef((data: any) => {
-    void require('../../store/useCallStore').default.getState().eventCall('accepted', data);
+    const callStore = require('../../store/useCallStore').default;
+    if (callStore.getState().callMode !== 'p2p') return;
+    void callStore.getState().eventCall('accepted', data);
   });
 
   const onCallEnd = useRef((data: any) => {
@@ -173,6 +175,10 @@ export const SocketEventGlobal = () => {
 
   const onCallRejected = useRef((data: any) => {
     void require('../../store/useCallStore').default.getState().eventCall('rejected', data);
+  });
+
+  const onCallHandoff = useRef((_data: any) => {
+    require('../../store/useCallStore').default.getState().releaseLocalCall();
   });
 
   useEffect(() => {
@@ -238,6 +244,7 @@ export const SocketEventGlobal = () => {
     callSocket.on(SocketEvents.CALL_BUSY, onCallBusy.current);
     callSocket.on('call:cancelled', onCallCancelled.current);
     callSocket.on('call:rejected', onCallRejected.current);
+    callSocket.on('call:handoff', onCallHandoff.current);
 
     callSocket.emit('heartbeat');
     const callHeartbeat = setInterval(() => {
@@ -253,6 +260,7 @@ export const SocketEventGlobal = () => {
       callSocket.off(SocketEvents.CALL_BUSY, onCallBusy.current);
       callSocket.off('call:cancelled', onCallCancelled.current);
       callSocket.off('call:rejected', onCallRejected.current);
+      callSocket.off('call:handoff', onCallHandoff.current);
     };
   }, [callSocket]);
 

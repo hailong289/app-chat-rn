@@ -366,6 +366,43 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       });
     },
 
+    releaseLocalCall: () => {
+      get().stream.localStream?.getTracks?.().forEach((track: any) => track.stop());
+      get().stream.localScreenStream?.getTracks?.().forEach((track: any) => track.stop());
+      get().stream.remoteStreams.forEach((stream: any) => {
+        stream?.getTracks?.().forEach((track: any) => track.stop());
+      });
+      get().stream.remoteScreenStreams.forEach((stream: any) => {
+        stream?.getTracks?.().forEach((track: any) => track.stop());
+      });
+
+      if (get().callMode === 'sfu') {
+        useSfuCallStore.getState().teardownSfu({ emitLeave: false });
+      } else {
+        useP2pCallStore.getState().teardownP2p();
+      }
+
+      _stopDurationTicker();
+
+      set({
+        status: 'ended',
+        roomId: null,
+        stream: {
+          localStream: null,
+          remoteStreams: new Map<string, any>(),
+          localScreenStream: null,
+          remoteScreenStreams: new Map<string, any>(),
+        },
+        peersSharingScreen: new Set<string>(),
+        action: {
+          ...get().action,
+          isSharingScreen: false,
+          userIdGhimmed: '',
+          screenSharerIdGhimmed: '',
+        },
+      });
+    },
+
     handleEndCall: (payload: any) => {
       const { roomId, actionUserId, callId } = payload;
 
@@ -535,6 +572,7 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         }
 
         case 'busy':
+          if (get().status === 'ended' || get().status === 'idle') break;
           set({ error: `${payload.targetUserId || 'Người dùng'} đang bận` });
           await get().endCall({
             roomId: get().roomId,
@@ -565,7 +603,47 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
 
         case 'share-screen': {
           const { actionUserId: sharerId, isSharing, screenProducerId } = payload;
+          const stateRoomId = get().roomId;
+          const key = stateRoomId && sharerId ? `${stateRoomId}-${sharerId}` : null;
           if (isSharing) {
+            if (key) {
+              const transceiver =
+                useP2pCallStore.getState().remoteScreenTransceivers?.get(key);
+              const track = transceiver?.receiver?.track;
+              if (track) {
+                set((prev) => {
+                  let MediaStreamClass: any;
+                  try {
+                    MediaStreamClass = require('react-native-webrtc').MediaStream;
+                  } catch {
+                    MediaStreamClass = null;
+                  }
+                  const existing = prev.stream.remoteScreenStreams.get(key);
+                  const target = existing ?? (MediaStreamClass ? new MediaStreamClass() : {
+                    getTracks: () => [],
+                    addTrack: () => {},
+                    removeTrack: () => {},
+                  });
+                  target.getTracks().forEach((t: any) => {
+                    if (t.kind === track.kind && t !== track) {
+                      target.removeTrack(t);
+                    }
+                  });
+                  if (!target.getTracks().includes(track)) {
+                    target.addTrack(track);
+                  }
+                  const newRemoteScreenStreams = new Map(prev.stream.remoteScreenStreams);
+                  newRemoteScreenStreams.set(key, target);
+                  return {
+                    stream: {
+                      ...prev.stream,
+                      remoteScreenStreams: newRemoteScreenStreams,
+                    },
+                  };
+                });
+              }
+            }
+
             set((prev) => ({
               peersSharingScreen: new Set([...prev.peersSharingScreen, sharerId]),
             }));
@@ -576,12 +654,73 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
                   screenProducerIds: new Set([...prev.sfu.screenProducerIds, screenProducerId]),
                 },
               }));
+
+              const consumers = useSfuCallStore.getState().sfu.consumers;
+              for (const consumer of consumers.values()) {
+                if (consumer.producerId !== screenProducerId) continue;
+                set((prev) => {
+                  if (!key) return prev;
+
+                  const cameraStream = prev.stream.remoteStreams.get(key);
+                  if (cameraStream) {
+                    try {
+                      cameraStream.removeTrack(consumer.track);
+                    } catch {}
+                  }
+
+                  let MediaStreamClass: any;
+                  try {
+                    MediaStreamClass = require('react-native-webrtc').MediaStream;
+                  } catch {
+                    MediaStreamClass = null;
+                  }
+                  const existing = prev.stream.remoteScreenStreams.get(key);
+                  const target = existing ?? (MediaStreamClass ? new MediaStreamClass() : {
+                    getTracks: () => [],
+                    addTrack: () => {},
+                    removeTrack: () => {},
+                  });
+                  target.getTracks().forEach((t: any) => {
+                    if (t.kind === consumer.track.kind && t !== consumer.track) {
+                      target.removeTrack(t);
+                    }
+                  });
+                  if (!target.getTracks().includes(consumer.track)) {
+                    target.addTrack(consumer.track);
+                  }
+
+                  const newRemoteStreams = new Map(prev.stream.remoteStreams);
+                  if (cameraStream?.getTracks?.().length === 0) {
+                    newRemoteStreams.delete(key);
+                  } else if (cameraStream) {
+                    newRemoteStreams.set(key, cameraStream);
+                  }
+
+                  const newRemoteScreenStreams = new Map(prev.stream.remoteScreenStreams);
+                  newRemoteScreenStreams.set(key, target);
+                  return {
+                    stream: {
+                      ...prev.stream,
+                      remoteStreams: newRemoteStreams,
+                      remoteScreenStreams: newRemoteScreenStreams,
+                    },
+                  };
+                });
+              }
             }
           } else {
             set((prev) => {
               const next = new Set(prev.peersSharingScreen);
               next.delete(sharerId);
-              return { peersSharingScreen: next };
+              const newRemoteScreenStreams = new Map(prev.stream.remoteScreenStreams);
+              if (key) newRemoteScreenStreams.delete(key);
+              return {
+                peersSharingScreen: next,
+                stream: {
+                  ...prev.stream,
+                  remoteScreenStreams: newRemoteScreenStreams,
+                },
+              };
             });
           }
           break;
