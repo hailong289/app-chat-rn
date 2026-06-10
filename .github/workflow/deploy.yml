@@ -2,7 +2,7 @@ name: Android & iOS CI/CD with Firebase Distribution
 
 on:
   push:
-    branches: [ main ]
+    branches: [ master ]
   workflow_dispatch:
     inputs:
       target:
