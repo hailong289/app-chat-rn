@@ -1,57 +1,132 @@
-name: Android & iOS CI/CD with Firebase Distribution
+name: Native React Native CI/CD with Firebase Distribution
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   workflow_dispatch:
     inputs:
       target:
-        description: "Chọn platform để build (ios/android)"
+        description: "Platform to build"
         required: true
-        default: "ios"
+        default: "android"
         type: choice
         options:
-          - ios
           - android
+          - ios
+
+env:
+  NODE_VERSION: "20.18.0"
+  APP_SCHEME: AppChatRN
 
 jobs:
   android:
-    name: Build Android & Distribute
+    name: Build Android APK & Distribute
     runs-on: ubuntu-latest
-    # if: github.event.inputs.target == 'android' --- IGNORE ---
+    if: ${{ github.event.inputs.target == 'android' }}
     environment: FIREBASE
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20.18.0'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Prebuild Android
-        run: npx expo prebuild
-
-      #link react-native-vector-icons
-      - name: Link react-native-vector-icons
-        run: npm run native:asset
-
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
+          java-version: "17"
+          distribution: temurin
+          cache: gradle
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create env.json
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+
+          if (process.env.ENV_JSON && process.env.ENV_JSON.trim()) {
+            JSON.parse(process.env.ENV_JSON);
+            fs.writeFileSync("env.json", process.env.ENV_JSON);
+            process.exit(0);
+          }
+
+          const keys = [
+            "APP_ENV",
+            "WEB_APP_URL",
+            "API_URL",
+            "API_VERSION",
+            "API_URL_PRODUCTION",
+            "WS_URL",
+            "GOOGLE_MAPS_API_KEY",
+            "FIREBASE_PROJECT_NUMBER",
+            "FIREBASE_PROJECT_ID",
+            "FIREBASE_STORAGE_BUCKET",
+            "FIREBASE_APP_ID",
+            "FIREBASE_PACKAGE_NAME",
+            "FIREBASE_CLIENT_ID_1",
+            "FIREBASE_CLIENT_ID_2",
+            "FIREBASE_CLIENT_ID_3",
+            "FIREBASE_API_KEY",
+            "FIREBASE_CERT_HASH_1",
+            "FIREBASE_CERT_HASH_2"
+          ];
+
+          const config = Object.fromEntries(keys.map((key) => [key, process.env[key] || ""]));
+          const optional = new Set(["GOOGLE_MAPS_API_KEY"]);
+          const missing = keys.filter((key) => !optional.has(key) && !config[key]);
+
+          if (missing.length > 0) {
+            console.error(`Missing env values: ${missing.join(", ")}`);
+            console.error("Set ENV_JSON secret or the matching GitHub variables/secrets.");
+            process.exit(1);
+          }
+
+          fs.writeFileSync("env.json", JSON.stringify(config, null, 2));
+          NODE
+        env:
+          ENV_JSON: ${{ secrets.ENV_JSON }}
+          APP_ENV: ${{ vars.APP_ENV || 'production' }}
+          WEB_APP_URL: ${{ vars.WEB_APP_URL }}
+          API_URL: ${{ vars.API_URL }}
+          API_VERSION: ${{ vars.API_VERSION || 'v1' }}
+          API_URL_PRODUCTION: ${{ vars.API_URL_PRODUCTION }}
+          WS_URL: ${{ vars.WS_URL }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_PACKAGE_NAME: ${{ secrets.FIREBASE_PACKAGE_NAME }}
+          FIREBASE_CLIENT_ID_1: ${{ secrets.FIREBASE_CLIENT_ID_1 }}
+          FIREBASE_CLIENT_ID_2: ${{ secrets.FIREBASE_CLIENT_ID_2 }}
+          FIREBASE_CLIENT_ID_3: ${{ secrets.FIREBASE_CLIENT_ID_3 }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_CERT_HASH_1: ${{ secrets.FIREBASE_CERT_HASH_1 }}
+          FIREBASE_CERT_HASH_2: ${{ secrets.FIREBASE_CERT_HASH_2 }}
+
+      - name: Generate Android Firebase config
+        run: node scripts/generate-firebase-config.js
 
       - name: Build release APK
+        working-directory: android
         run: |
-          cd android
+          chmod +x ./gradlew
           ./gradlew assembleRelease
 
-      - name: Upload artifact to Firebase App Distribution
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload APK to Firebase App Distribution
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
           appId: ${{ secrets.FIREBASE_ANDROID_APP_ID }}
@@ -60,47 +135,200 @@ jobs:
           file: android/app/build/outputs/apk/release/app-release.apk
 
   ios:
-    name: Build iOS & Distribute
-    runs-on: ubuntu-latest
-    if: github.event.inputs.target == 'ios'
+    name: Build iOS IPA & Distribute
+    runs-on: macos-latest
+    if: ${{ github.event.inputs.target == 'ios' }}
     environment: FIREBASE
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
 
-      - name: Cache npm
-        uses: actions/cache@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+          ruby-version: "3.3"
+          bundler-cache: true
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
-
-      - name: Run EAS Build (iOS)
-        run: eas build --platform ios --profile preview --non-interactive --wait
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-
-      - name: Download iOS artifact
+      - name: Create env.json
         run: |
-          url=$(eas build:list --platform ios --status finished --limit 1 --non-interactive --json | jq -r '.[0].artifacts.buildUrl')
-          curl -L -o AppChat.ipa "$url"
+          node <<'NODE'
+          const fs = require("fs");
 
-      - name: Upload artifact to Firebase App Distribution
+          if (process.env.ENV_JSON && process.env.ENV_JSON.trim()) {
+            JSON.parse(process.env.ENV_JSON);
+            fs.writeFileSync("env.json", process.env.ENV_JSON);
+            process.exit(0);
+          }
+
+          const keys = [
+            "APP_ENV",
+            "WEB_APP_URL",
+            "API_URL",
+            "API_VERSION",
+            "API_URL_PRODUCTION",
+            "WS_URL",
+            "GOOGLE_MAPS_API_KEY",
+            "FIREBASE_PROJECT_NUMBER",
+            "FIREBASE_PROJECT_ID",
+            "FIREBASE_STORAGE_BUCKET",
+            "FIREBASE_APP_ID",
+            "FIREBASE_PACKAGE_NAME",
+            "FIREBASE_CLIENT_ID_1",
+            "FIREBASE_CLIENT_ID_2",
+            "FIREBASE_CLIENT_ID_3",
+            "FIREBASE_API_KEY",
+            "FIREBASE_CERT_HASH_1",
+            "FIREBASE_CERT_HASH_2"
+          ];
+
+          const config = Object.fromEntries(keys.map((key) => [key, process.env[key] || ""]));
+          const optional = new Set(["GOOGLE_MAPS_API_KEY"]);
+          const missing = keys.filter((key) => !optional.has(key) && !config[key]);
+
+          if (missing.length > 0) {
+            console.error(`Missing env values: ${missing.join(", ")}`);
+            console.error("Set ENV_JSON secret or the matching GitHub variables/secrets.");
+            process.exit(1);
+          }
+
+          fs.writeFileSync("env.json", JSON.stringify(config, null, 2));
+          NODE
+        env:
+          ENV_JSON: ${{ secrets.ENV_JSON }}
+          APP_ENV: ${{ vars.APP_ENV || 'production' }}
+          WEB_APP_URL: ${{ vars.WEB_APP_URL }}
+          API_URL: ${{ vars.API_URL }}
+          API_VERSION: ${{ vars.API_VERSION || 'v1' }}
+          API_URL_PRODUCTION: ${{ vars.API_URL_PRODUCTION }}
+          WS_URL: ${{ vars.WS_URL }}
+          GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+          FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_PACKAGE_NAME: ${{ secrets.FIREBASE_PACKAGE_NAME }}
+          FIREBASE_CLIENT_ID_1: ${{ secrets.FIREBASE_CLIENT_ID_1 }}
+          FIREBASE_CLIENT_ID_2: ${{ secrets.FIREBASE_CLIENT_ID_2 }}
+          FIREBASE_CLIENT_ID_3: ${{ secrets.FIREBASE_CLIENT_ID_3 }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_CERT_HASH_1: ${{ secrets.FIREBASE_CERT_HASH_1 }}
+          FIREBASE_CERT_HASH_2: ${{ secrets.FIREBASE_CERT_HASH_2 }}
+
+      - name: Install CocoaPods
+        run: bundle exec pod install --project-directory=ios
+
+      - name: Install Apple signing assets
+        env:
+          IOS_CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROVISION_PROFILE_BASE64: ${{ secrets.IOS_PROVISION_PROFILE_BASE64 }}
+          IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+        run: |
+          test -n "$IOS_CERTIFICATE_BASE64"
+          test -n "$IOS_CERTIFICATE_PASSWORD"
+          test -n "$IOS_PROVISION_PROFILE_BASE64"
+          test -n "$IOS_KEYCHAIN_PASSWORD"
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/build_certificate.p12"
+          PROFILE_PATH="$RUNNER_TEMP/build_profile.mobileprovision"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+
+          echo "$IOS_CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          echo "$IOS_PROVISION_PROFILE_BASE64" | base64 --decode > "$PROFILE_PATH"
+
+          security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$IOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+
+          PROFILE_UUID="$(security cms -D -i "$PROFILE_PATH" | plutil -extract UUID raw -)"
+          PROFILE_NAME="$(security cms -D -i "$PROFILE_PATH" | plutil -extract Name raw -)"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$PROFILE_PATH" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "IOS_PROFILE_UUID=$PROFILE_UUID" >> "$GITHUB_ENV"
+          echo "IOS_PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+
+      - name: Archive iOS app
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_BUNDLE_IDENTIFIER: ${{ secrets.IOS_BUNDLE_IDENTIFIER }}
+        run: |
+          test -n "$APPLE_TEAM_ID"
+          test -n "$IOS_BUNDLE_IDENTIFIER"
+          test -n "$IOS_PROFILE_UUID"
+          test -n "$IOS_PROFILE_NAME"
+
+          xcodebuild archive \
+            -workspace ios/AppChatRN.xcworkspace \
+            -scheme "$APP_SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/AppChatRN.xcarchive \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$IOS_BUNDLE_IDENTIFIER" \
+            CODE_SIGN_STYLE=Manual \
+            PROVISIONING_PROFILE="$IOS_PROFILE_UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="$IOS_PROFILE_NAME" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            clean archive
+
+      - name: Export IPA
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          IOS_BUNDLE_IDENTIFIER: ${{ secrets.IOS_BUNDLE_IDENTIFIER }}
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>ad-hoc</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>teamID</key>
+            <string>$APPLE_TEAM_ID</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$IOS_BUNDLE_IDENTIFIER</key>
+              <string>$IOS_PROFILE_NAME</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath build/AppChatRN.xcarchive \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath build/ios
+
+          IPA_PATH="$(find build/ios -name '*.ipa' -print -quit)"
+          test -n "$IPA_PATH"
+          echo "IPA_PATH=$IPA_PATH" >> "$GITHUB_ENV"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-ipa
+          path: ${{ env.IPA_PATH }}
+
+      - name: Upload IPA to Firebase App Distribution
         uses: wzieba/Firebase-Distribution-Github-Action@v1
         with:
-          appId: ${{ secrets.FIREBASE_IOS_APP_ID }}   # ✅ sửa lại appId
+          appId: ${{ secrets.FIREBASE_IOS_APP_ID }}
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           groups: testers
-          file: AppChat.ipa
+          file: ${{ env.IPA_PATH }}
