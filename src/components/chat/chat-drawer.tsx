@@ -599,7 +599,6 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({
           setRefreshQuizList(prev => !prev);
         }}
         roomId={getRoomMongoId(room)}
-        userId={user?._id}
       />
 
       {/* Take Quiz Modal */}

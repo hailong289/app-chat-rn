@@ -161,8 +161,8 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
       Alert.alert("Lỗi", "Thời gian bắt đầu phải trước thời gian kết thúc");
       return;
     }
-    if (!roomId || !userId) {
-      Alert.alert("Lỗi", "Thiếu thông tin phòng hoặc người dùng");
+    if (!roomId) {
+      Alert.alert("Lỗi", "Thiếu thông tin phòng");
       return;
     }
 
@@ -173,7 +173,6 @@ export default function CreateQuizzModal({ isOpen, onClose, roomId, userId }: Cr
         quiz_description: quizDesc.trim(),
         quiz_status: "draft",
         quiz_roomId: roomId,
-        quiz_createdBy: userId,
         quiz_questions: questions,
         quiz_startTime: startTime?.toISOString(),
         quiz_endTime: endTime?.toISOString(),
