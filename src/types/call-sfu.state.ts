@@ -4,6 +4,13 @@
  * and avoid compile errors when the native binding is not yet linked.
  */
 
+export interface SfuRemoteProducerInfo {
+  producerId: string;
+  userId?: string;
+  kind?: string;
+  appData?: { source?: string };
+}
+
 export interface SfuSessionState {
   /** mediasoup-client Device */
   device: any | null;
@@ -17,6 +24,8 @@ export interface SfuSessionState {
   consumers: Map<string, any>;
   /** Pending produce callbacks waiting for the SFU 'produce' ack */
   pendingProduceCallbacks: Map<string, (params: { id: string }) => void>;
+  /** Remote producers announced before the receive transport is ready */
+  pendingRemoteProducers: Map<string, SfuRemoteProducerInfo>;
   /** Local screen-share producer (separate from camera/mic producers) */
   screenProducer: any | null;
   /**

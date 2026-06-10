@@ -162,19 +162,13 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         incomingCall: null,
       });
 
-      // Emit call:request immediately so backend receives it without
-      // waiting for the Call screen navigation + updateCallState.
-      const requestPayload = {
-        actionUserId: currentUser?.id || '',
-        membersIds: memberMap.map((m: any) => m.id),
-        roomId,
-        callType: mode,
-      };
-      if (callMode === 'sfu') {
-        socket.emit('call:request', requestPayload);
-        socket?.emit('signal', { type: 'join', roomId, target: 'sfu' });
-      } else {
-        socket?.emit('call:request', requestPayload);
+      if (callMode !== 'sfu') {
+        socket?.emit('call:request', {
+          actionUserId: currentUser?.id || '',
+          membersIds: memberMap.map((m: any) => m.id),
+          roomId,
+          callType: mode,
+        });
       }
 
       navigateToCallScreen(_callNavigation, {

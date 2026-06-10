@@ -430,7 +430,10 @@ function ParticipantTile({
   isMicOff: boolean;
   onPress: () => void;
 }) {
-  const hasVideo = !isCameraOff && RTCView;
+  const videoTracks = stream?.getVideoTracks?.() ?? [];
+  const videoTrack = videoTracks[0];
+  const hasVideo = !isCameraOff && RTCView && !!videoTrack;
+  const rtcViewKey = `${streamKey}-${videoTrack?.id ?? 'no-video'}`;
 
   return (
     <TouchableOpacity
@@ -444,6 +447,7 @@ function ParticipantTile({
     >
       {hasVideo ? (
         <RTCView
+          key={rtcViewKey}
           streamURL={stream.toURL?.() ?? stream.id}
           style={StyleSheet.absoluteFill}
           objectFit={fullScreen ? 'contain' : 'cover'}

@@ -1,5 +1,9 @@
 import { create, UseBoundStore, StoreApi } from 'zustand';
-import { SfuStoreState, SfuSessionState } from '../types/call-sfu.state';
+import type {
+  SfuRemoteProducerInfo,
+  SfuStoreState,
+  SfuSessionState,
+} from '../types/call-sfu.state';
 
 // Circular import is safe: access is only inside action closures.
 import useCallStore from './useCallStore';
@@ -10,6 +14,7 @@ import {
 
 // Module-level guard prevents duplicate consumption race conditions.
 const _consumingProducerIds = new Set<string>();
+const _consumeRequestProducerIds = new Set<string>();
 
 const EMPTY_SFU: SfuSessionState = {
   device: null,
@@ -18,6 +23,7 @@ const EMPTY_SFU: SfuSessionState = {
   producers: new Map(),
   consumers: new Map(),
   pendingProduceCallbacks: new Map(),
+  pendingRemoteProducers: new Map(),
   screenProducer: null,
   screenProducerIds: new Set<string>(),
 };
@@ -96,6 +102,7 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
       sfu.sendTransport?.close();
       sfu.recvTransport?.close();
       _consumingProducerIds.clear();
+      _consumeRequestProducerIds.clear();
       set({ sfu: { ...EMPTY_SFU } });
     },
 
@@ -117,6 +124,10 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
       } = payload;
 
       if (ok === false) {
+        if (producerId) {
+          _consumeRequestProducerIds.delete(producerId);
+          _consumingProducerIds.delete(producerId);
+        }
         if (type === 'createTransport') {
           const { socket, roomId } = useCallStore.getState();
           console.warn(`[SFU] createTransport failed (${message}), re-joining SFU room...`);
@@ -126,6 +137,100 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
         }
         return;
       }
+
+      const rememberScreenProducer = (producer: SfuRemoteProducerInfo) => {
+        if (producer.appData?.source !== 'screen') return;
+
+        set((prev) => ({
+          sfu: {
+            ...prev.sfu,
+            screenProducerIds: new Set([
+              ...prev.sfu.screenProducerIds,
+              producer.producerId,
+            ]),
+          },
+        }));
+
+        const userId = producer.userId;
+        if (userId) {
+          useCallStore.setState((prev) => ({
+            peersSharingScreen: new Set([
+              ...prev.peersSharingScreen,
+              userId,
+            ]),
+          }));
+        }
+      };
+
+      const queueRemoteProducer = (producer: SfuRemoteProducerInfo) => {
+        rememberScreenProducer(producer);
+        set((prev) => {
+          const pendingRemoteProducers = new Map(prev.sfu.pendingRemoteProducers);
+          pendingRemoteProducers.set(producer.producerId, producer);
+          return {
+            sfu: {
+              ...prev.sfu,
+              pendingRemoteProducers,
+            },
+          };
+        });
+      };
+
+      const requestConsumeProducer = (producer: SfuRemoteProducerInfo) => {
+        if (!producer.producerId) return false;
+
+        const { socket: s, roomId: r } = useCallStore.getState();
+        const { sfu: sfuNow } = get();
+        if (!s || !r || !sfuNow.recvTransport || !sfuNow.device) return false;
+
+        const alreadyRequested =
+          _consumeRequestProducerIds.has(producer.producerId) ||
+          _consumingProducerIds.has(producer.producerId) ||
+          [...sfuNow.consumers.values()].some(
+            (c) => c.producerId === producer.producerId,
+          );
+        if (alreadyRequested) return true;
+
+        rememberScreenProducer(producer);
+        _consumeRequestProducerIds.add(producer.producerId);
+
+        s.emit('signal', {
+          type: 'consume',
+          roomId: r,
+          target: 'sfu',
+          transportId: sfuNow.recvTransport.id,
+          producerId: producer.producerId,
+          rtpCapabilities: sfuNow.device.rtpCapabilities,
+          userId: producer.userId,
+        });
+
+        return true;
+      };
+
+      const flushPendingRemoteProducers = () => {
+        const pending = [...get().sfu.pendingRemoteProducers.values()];
+        if (pending.length === 0) return;
+
+        const flushedIds: string[] = [];
+        for (const producer of pending) {
+          if (requestConsumeProducer(producer)) {
+            flushedIds.push(producer.producerId);
+          }
+        }
+
+        if (flushedIds.length > 0) {
+          set((prev) => {
+            const pendingRemoteProducers = new Map(prev.sfu.pendingRemoteProducers);
+            flushedIds.forEach((id) => pendingRemoteProducers.delete(id));
+            return {
+              sfu: {
+                ...prev.sfu,
+                pendingRemoteProducers,
+              },
+            };
+          });
+        }
+      };
 
       try {
         switch (type) {
@@ -218,6 +323,7 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
               });
             } else {
               set((prev) => ({ sfu: { ...prev.sfu, recvTransport: transport } }));
+              flushPendingRemoteProducers();
               socket?.emit('signal', { type: 'getProducers', roomId, target: 'sfu' });
             }
             break;
@@ -236,40 +342,22 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
                 });
               }
             } else if (target === 'broadcast') {
-              const { socket: s, roomId: r } = useCallStore.getState();
-              const { sfu: sfuNow } = get();
-              if (!sfuNow.recvTransport || !sfuNow.device) break;
-
-              const broadcastAppData = payload.appData as { source?: string } | undefined;
-              if (broadcastAppData?.source === 'screen') {
-                set((prev) => ({
-                  sfu: {
-                    ...prev.sfu,
-                    screenProducerIds: new Set([...prev.sfu.screenProducerIds, producerId]),
-                  },
-                }));
-                if (payload.userId) {
-                  useCallStore.setState((prev) => ({
-                    peersSharingScreen: new Set([...prev.peersSharingScreen, payload.userId]),
-                  }));
-                }
-              }
-
-              s?.emit('signal', {
-                type: 'consume',
-                roomId: r,
-                target: 'sfu',
-                transportId: sfuNow.recvTransport.id,
-                producerId,
-                rtpCapabilities: sfuNow.device.rtpCapabilities,
+              if (!producerId) break;
+              const remoteProducer: SfuRemoteProducerInfo = {
                 userId: payload.userId,
-              });
+                kind,
+                producerId,
+                appData: payload.appData as { source?: string } | undefined,
+              };
+
+              if (!requestConsumeProducer(remoteProducer)) {
+                queueRemoteProducer(remoteProducer);
+              }
             }
             break;
           }
 
           case 'getProducers': {
-            const { socket: s, roomId: r } = useCallStore.getState();
             const { sfu: sfuNow } = get();
             if (!sfuNow.recvTransport || !sfuNow.device) return;
 
@@ -280,35 +368,12 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
               appData?: { source?: string };
             }> = payload.producers || [];
 
-            const screenIds: string[] = [];
-            const sharerUserIds: string[] = [];
-            for (const p of producers) {
-              if (p.appData?.source === 'screen') {
-                screenIds.push(p.producerId);
-                sharerUserIds.push(p.userId);
-              }
-            }
-            if (screenIds.length > 0) {
-              set((prev) => ({
-                sfu: {
-                  ...prev.sfu,
-                  screenProducerIds: new Set([...prev.sfu.screenProducerIds, ...screenIds]),
-                },
-              }));
-              useCallStore.setState((prev) => ({
-                peersSharingScreen: new Set([...prev.peersSharingScreen, ...sharerUserIds]),
-              }));
-            }
-
-            for (const { producerId: pid, userId: pUserId } of producers) {
-              s?.emit('signal', {
-                type: 'consume',
-                roomId: r,
-                target: 'sfu',
-                transportId: sfuNow.recvTransport.id,
-                producerId: pid,
-                rtpCapabilities: sfuNow.device.rtpCapabilities,
-                userId: pUserId,
+            for (const producer of producers) {
+              requestConsumeProducer({
+                producerId: producer.producerId,
+                userId: producer.userId,
+                kind: producer.kind,
+                appData: producer.appData,
               });
             }
             break;
@@ -317,13 +382,17 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
           case 'consume': {
             const { sfu: sfuSnapshot } = get();
             if (!sfuSnapshot.recvTransport) return;
+            if (!producerId) return;
 
             const alreadyConsuming =
               _consumingProducerIds.has(producerId) ||
               [...sfuSnapshot.consumers.values()].some(
                 (c) => c.producerId === producerId,
               );
-            if (alreadyConsuming) break;
+            if (alreadyConsuming) {
+              _consumeRequestProducerIds.delete(producerId);
+              break;
+            }
 
             _consumingProducerIds.add(producerId);
 
@@ -395,11 +464,20 @@ const useSfuCallStore: UseBoundStore<StoreApi<SfuStoreState>> = create<SfuStoreS
 
               set((prev) => {
                 const newConsumers = new Map(prev.sfu.consumers);
+                const pendingRemoteProducers = new Map(prev.sfu.pendingRemoteProducers);
                 newConsumers.set(consumer.id, consumer);
-                return { sfu: { ...prev.sfu, consumers: newConsumers } };
+                pendingRemoteProducers.delete(producerId);
+                return {
+                  sfu: {
+                    ...prev.sfu,
+                    consumers: newConsumers,
+                    pendingRemoteProducers,
+                  },
+                };
               });
             } finally {
               _consumingProducerIds.delete(producerId);
+              _consumeRequestProducerIds.delete(producerId);
             }
             break;
           }
