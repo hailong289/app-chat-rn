@@ -92,12 +92,12 @@ jobs:
           NODE
         env:
           ENV_JSON: ${{ secrets.ENV_JSON }}
-          APP_ENV: ${{ vars.APP_ENV || 'production' }}
-          WEB_APP_URL: ${{ vars.WEB_APP_URL }}
-          API_URL: ${{ vars.API_URL }}
-          API_VERSION: ${{ vars.API_VERSION || 'v1' }}
-          API_URL_PRODUCTION: ${{ vars.API_URL_PRODUCTION }}
-          WS_URL: ${{ vars.WS_URL }}
+          APP_ENV: ${{ secrets.APP_ENV || 'production' }}
+          WEB_APP_URL: ${{ secrets.WEB_APP_URL }}
+          API_URL: ${{ secrets.API_URL }}
+          API_VERSION: ${{ secrets.API_VERSION || 'v1' }}
+          API_URL_PRODUCTION: ${{ secrets.API_URL_PRODUCTION }}
+          WS_URL: ${{ secrets.WS_URL }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
@@ -206,12 +206,12 @@ jobs:
           NODE
         env:
           ENV_JSON: ${{ secrets.ENV_JSON }}
-          APP_ENV: ${{ vars.APP_ENV || 'production' }}
-          WEB_APP_URL: ${{ vars.WEB_APP_URL }}
-          API_URL: ${{ vars.API_URL }}
-          API_VERSION: ${{ vars.API_VERSION || 'v1' }}
-          API_URL_PRODUCTION: ${{ vars.API_URL_PRODUCTION }}
-          WS_URL: ${{ vars.WS_URL }}
+          APP_ENV: ${{ secrets.APP_ENV || 'production' }}
+          WEB_APP_URL: ${{ secrets.WEB_APP_URL }}
+          API_URL: ${{ secrets.API_URL }}
+          API_VERSION: ${{ secrets.API_VERSION || 'v1' }}
+          API_URL_PRODUCTION: ${{ secrets.API_URL_PRODUCTION }}
+          WS_URL: ${{ secrets.WS_URL }}
           GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
           FIREBASE_PROJECT_NUMBER: ${{ secrets.FIREBASE_PROJECT_NUMBER }}
           FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
