@@ -10,6 +10,10 @@
     "**/Pods"
   ],
   "compilerOptions": {
+    "lib": [
+      "esnext",
+      "dom"
+    ],
     "paths": {
       "@/*": [
         "./*"

@@ -93,7 +93,8 @@ export const OtpModal = ({
                         <ButtonText>Hủy</ButtonText>
                     </Button>
                     <Button
-                        variant="primary"
+                        variant="solid"
+                        action="primary"
                         onPress={handleSubmit}
                     >
                         <ButtonText className="text-white">Xác nhận</ButtonText>

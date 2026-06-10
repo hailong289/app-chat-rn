@@ -1,0 +1,20 @@
+declare module "@/env.json" {
+  export const APP_ENV: string;
+  export const WEB_APP_URL: string;
+  export const API_URL: string;
+  export const API_VERSION: string;
+  export const API_URL_PRODUCTION: string;
+  export const WS_URL: string;
+  export const GOOGLE_MAPS_API_KEY: string;
+  export const FIREBASE_PROJECT_NUMBER: string;
+  export const FIREBASE_PROJECT_ID: string;
+  export const FIREBASE_STORAGE_BUCKET: string;
+  export const FIREBASE_APP_ID: string;
+  export const FIREBASE_PACKAGE_NAME: string;
+  export const FIREBASE_CLIENT_ID_1: string;
+  export const FIREBASE_CLIENT_ID_2: string;
+  export const FIREBASE_CLIENT_ID_3: string;
+  export const FIREBASE_API_KEY: string;
+  export const FIREBASE_CERT_HASH_1: string;
+  export const FIREBASE_CERT_HASH_2: string;
+}

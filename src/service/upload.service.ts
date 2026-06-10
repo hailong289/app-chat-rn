@@ -82,7 +82,7 @@ export default class UploadService {
       type: file.type,
       // Xử lý URI cho đúng
       uri: Platform.OS === 'android' ? file.uri : file.uri.replace('file://', ''),
-    });
+    } as unknown as Blob);
     form.append("roomId", options?.roomId ?? "avatar");
     form.append("id", options?.id ?? "");
 

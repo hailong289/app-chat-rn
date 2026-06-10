@@ -1,8 +1,6 @@
 import { create } from "zustand";
-import documentService, {
-  Document,
-  CreateDocumentDto,
-} from "../service/document.service";
+import documentService from "../service/document.service";
+import type { CreateDocumentDto, Document } from "../types/document.type";
 
 interface DocumentState {
   documents: Document[];

@@ -16,6 +16,23 @@ import useRoomStore from "./useRoom";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+type UploadableFile = File & { fileName: string; uri: string };
+type UploadableAttachment = FilePreview & { file: UploadableFile };
+
+const isUploadableFile = (
+    file: File | null | undefined,
+): file is UploadableFile => {
+    const maybeFile = file as { fileName?: unknown; uri?: unknown } | null | undefined;
+    return Boolean(
+        maybeFile &&
+        typeof maybeFile.fileName === "string" &&
+        typeof maybeFile.uri === "string"
+    );
+};
+
+const hasUploadableFile = (attachment: FilePreview): attachment is UploadableAttachment =>
+    isUploadableFile(attachment.file);
+
 const sanitizeMessageForDB = (msg: MessageType): Record<string, any> => {
   const clean = {
     id: msg.id,
@@ -268,9 +285,14 @@ const useMessageStore = create<MessageState>()(
             }
 
             try {
+                const failedAttachments = message.attachments.filter(
+                    (attachment): attachment is UploadableAttachment =>
+                        attachment.status === "failed" && hasUploadableFile(attachment),
+                );
+                if (failedAttachments.length === 0) return;
                 const uploadResult = await UploadService.uploadMultipleParallel(
-                    message.attachments.filter((a) => a.status === "failed").map((a) => a.file!).filter(Boolean),
-                    { roomId, id: message.attachments.filter((a) => a.status === "failed").map((a) => a._id), onEachProgress: () => {} },
+                    failedAttachments.map((a) => a.file),
+                    { roomId, id: failedAttachments.map((a) => a._id), onEachProgress: () => {} },
                 );
                 socket?.emit("message:send", { roomId, type: message.type, content: message.content, replyTo: message.reply?._id, id: messageId, attachments: uploadResult.map((r: any) => r._id) });
                 get().autoMarkMessageSent(roomId, messageId, 3000);
@@ -299,7 +321,7 @@ const useMessageStore = create<MessageState>()(
 
         // ── Send with Attachments ──────────────────────────────────
         sendMessageWithAttachments: async (roomId, messageId, attachments, socket, data) => {
-            const filesToUpload = attachments.filter((att) => att.file);
+            const filesToUpload = attachments.filter(hasUploadableFile);
             const fileIds = filesToUpload.map((att) => att._id);
             const files = filesToUpload.map((att) => att.file!);
 
@@ -429,7 +451,7 @@ const useMessageStore = create<MessageState>()(
                     return false;
                 }
 
-                const newMessages = response.data.metadata.map((msg: any) =>
+                const newMessages: MessageType[] = response.data.metadata.map((msg: any) =>
                     sanitizeMessageFromAPI({ ...msg, roomId: chatId }),
                 );
 
@@ -505,7 +527,7 @@ const useMessageStore = create<MessageState>()(
                 if (!roomId) return;
                 const response = await MessageService.getMessages({ roomId, queryParams: { msgId: lastMessageId, limit: 50, type: "new" } });
 
-                const newMessages = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
+                const newMessages: MessageType[] = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
                 if (newMessages.length === 0) return;
 
                 for (const msg of newMessages) {
@@ -533,7 +555,7 @@ const useMessageStore = create<MessageState>()(
 
             try {
                 const response = await MessageService.getMessages({ roomId, queryParams: { msgId: oldestId, limit, type: "old" } });
-                const olderMessages = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
+                const olderMessages: MessageType[] = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
                 if (olderMessages.length === 0) return [];
 
                 const freshRoom = get().messagesRoom[roomId];
@@ -558,7 +580,7 @@ const useMessageStore = create<MessageState>()(
             if (!messageId || messageId === "null" || messageId === "undefined") return false;
             try {
                 const response = await MessageService.getMessages({ roomId, queryParams: { msgId: messageId, limit: 50, type: "around" } });
-                const messages = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
+                const messages: MessageType[] = (response.data.metadata || []).map((msg: any) => sanitizeMessageFromAPI({ ...msg, roomId }));
                 if (messages.length > 0) {
                     for (const msg of messages) {
                         await Messages.getInstance().getQuery().upsert(sanitizeMessageForDB(msg as any));
@@ -727,7 +749,10 @@ const useMessageStore = create<MessageState>()(
                         const users = (r.users || []).filter((u: any) => u._id !== userId && u.usr_id !== userId);
                         return users.length > 0 ? { ...r, users, count: users.length } : null;
                     })
-                    .filter(Boolean);
+                    .filter(
+                        (reaction): reaction is NonNullable<typeof reaction> =>
+                            Boolean(reaction),
+                    );
                 return { ...msg, reactions };
             });
             set({ messagesRoom: { ...get().messagesRoom, [roomId]: { ...room, messages: msgs } } });

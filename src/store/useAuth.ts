@@ -92,7 +92,7 @@ const useAuthStore = create<AuthState>()(
         await tokenStorage.set(accessToken);
         const loginUser = normalizeAuthUser(
           extractAuthUserRaw(response.data) ??
-            (metadata?.user as Record<string, unknown> | undefined),
+            (metadata?.user as unknown as Record<string, unknown> | undefined),
         );
         set({
           isAuthenticated: true,
@@ -163,7 +163,7 @@ const useAuthStore = create<AuthState>()(
         await tokenStorage.set(accessToken);
         const registerUser = normalizeAuthUser(
           extractAuthUserRaw(data) ??
-            (metadata?.user as Record<string, unknown> | undefined),
+            (metadata?.user as unknown as Record<string, unknown> | undefined),
         );
         set({
           isAuthenticated: true,

@@ -66,7 +66,7 @@ export default function AppWebView({
       onHttpError={(e) =>
         onError?.(`HTTP ${e.nativeEvent.statusCode}: ${e.nativeEvent.url}`)
       }
-      renderError={(e) => renderError(e?.description)}
+      renderError={(_domain, _code, description) => renderError(description)}
       {...(Platform.OS === "android"
         ? { androidLayerType: "hardware" as const }
         : {})}

@@ -1,5 +1,5 @@
 import { createBottomTabNavigator, BottomTabBarButtonProps } from "@react-navigation/bottom-tabs";
-import { TouchableOpacity } from "react-native";
+import { TouchableOpacity, TouchableOpacityProps } from "react-native";
 import { useEffect } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -26,10 +26,14 @@ const MainTab = createBottomTabNavigator<MainTabParamList>();
 
 const MoreMenuTabButton = ({
     openMenu,
+    delayLongPress,
+    disabled,
     ...props
 }: BottomTabBarButtonProps & { openMenu: () => void }) => (
     <TouchableOpacity
-        {...props}
+        {...(props as TouchableOpacityProps)}
+        delayLongPress={delayLongPress ?? undefined}
+        disabled={disabled ?? undefined}
         onPress={openMenu}
         activeOpacity={0.7}
         accessibilityRole="button"

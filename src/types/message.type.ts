@@ -175,6 +175,7 @@ export interface RoomData {
   attachments: FilePreview[] | null;
   ghim: string[] | null;
   updatedAt: string | null;
+  reply?: MessageType | null;
 }
 
 export interface SendMessageArgs {

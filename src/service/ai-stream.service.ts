@@ -156,7 +156,7 @@ export async function consumeAiSse(
 
   const reader = responseBody.getReader();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const decoder = new (globalThis as any).TextDecoder() as { decode(input?: BufferSource, options?: { stream?: boolean }): string };
+  const decoder = new (globalThis as any).TextDecoder() as { decode(input?: Uint8Array, options?: { stream?: boolean }): string };
   let buffer = "";
 
   while (true) {
