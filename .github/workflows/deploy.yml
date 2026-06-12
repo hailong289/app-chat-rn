@@ -15,7 +15,7 @@ on:
           - ios
 
 env:
-  NODE_VERSION: "20.18.0"
+  NODE_VERSION: "20.19.4"
   APP_SCHEME: AppChatRN
 
 jobs:
@@ -44,7 +44,7 @@ jobs:
           cache: gradle
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --include=optional
 
       - name: Create env.json
         run: |
@@ -158,7 +158,7 @@ jobs:
           bundler-cache: true
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --include=optional
 
       - name: Create env.json
         run: |
