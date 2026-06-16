@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="26.0.0">
+  <diagram name="AppChatRN Tech Stack">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1240" pageHeight="620" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Background -->
+        <mxCell id="bg" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="1240" height="620" as="geometry" />
+        </mxCell>
+
+        <!-- Title -->
+        <mxCell id="title" value="AppChatRN — Công Nghệ Cốt Lõi" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=28;fontStyle=1;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="220" y="20" width="800" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LAYER 1: CORE FRAMEWORK ===== -->
+        <mxCell id="layer1-container" value="🏗️  Core Framework" style="swimlane;startSize=32;fillColor=#EFF6FF;strokeColor=#3B82F6;fontSize=15;fontStyle=1;fontColor=#1E3A5F;swimlaneLine=0;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="1160" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-rn" value="&lt;b&gt;React Native 0.82&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontSize=14;fontColor=#1E3A5F;arcSize=12;" vertex="1" parent="layer1-container">
+          <mxGeometry x="70" y="38" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-ts" value="&lt;b&gt;TypeScript 5.8&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontSize=14;fontColor=#1E3A5F;arcSize=12;" vertex="1" parent="layer1-container">
+          <mxGeometry x="440" y="38" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-react" value="&lt;b&gt;React 19.1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#2563EB;fontSize=14;fontColor=#1E3A5F;arcSize=12;" vertex="1" parent="layer1-container">
+          <mxGeometry x="810" y="38" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow layer1 -> layer2 -->
+        <mxCell id="arr1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9CA3AF;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="layer1-container" target="layer2-container">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LAYER 2: ARCHITECTURE ===== -->
+        <mxCell id="layer2-container" value="⚛️  Architecture Layer" style="swimlane;startSize=32;fillColor=#F0FDF4;strokeColor=#22C55E;fontSize=15;fontStyle=1;fontColor=#14532D;swimlaneLine=0;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="225" width="1160" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-state" value="&lt;b&gt;Zustand 5&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontSize=14;fontColor=#14532D;arcSize=12;" vertex="1" parent="layer2-container">
+          <mxGeometry x="70" y="38" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-ui" value="&lt;b&gt;NativeWind 4 + Gluestack UI&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontSize=14;fontColor=#14532D;arcSize=12;" vertex="1" parent="layer2-container">
+          <mxGeometry x="440" y="38" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-net" value="&lt;b&gt;Axios + Socket.IO Client&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;fontSize=14;fontColor=#14532D;arcSize=12;" vertex="1" parent="layer2-container">
+          <mxGeometry x="810" y="38" width="280" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow layer2 -> layer3 -->
+        <mxCell id="arr2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#9CA3AF;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="layer2-container" target="layer3-container">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== LAYER 3: PLATFORM SERVICES ===== -->
+        <mxCell id="layer3-container" value="🔌  Platform Services" style="swimlane;startSize=32;fillColor=#FFF7ED;strokeColor=#F97316;fontSize=15;fontStyle=1;fontColor=#7C2D12;swimlaneLine=0;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="1160" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-db" value="&lt;b&gt;Nitro SQLite + AsyncStorage&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#EA580C;fontSize=14;fontColor=#7C2D12;arcSize=12;" vertex="1" parent="layer3-container">
+          <mxGeometry x="25" y="38" width="250" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-rtc" value="&lt;b&gt;mediasoup + WebRTC&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#EA580C;fontSize=14;fontColor=#7C2D12;arcSize=12;" vertex="1" parent="layer3-container">
+          <mxGeometry x="310" y="38" width="250" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-notif" value="&lt;b&gt;Firebase FCM + Notifee&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#EA580C;fontSize=14;fontColor=#7C2D12;arcSize=12;" vertex="1" parent="layer3-container">
+          <mxGeometry x="595" y="38" width="250" height="45" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tech-media" value="&lt;b&gt;Media &amp; Đa phương tiện&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#EA580C;fontSize=14;fontColor=#7C2D12;arcSize=12;" vertex="1" parent="layer3-container">
+          <mxGeometry x="880" y="38" width="250" height="45" as="geometry" />
+        </mxCell>
+
+        <!-- Footer -->
+        <mxCell id="footer" value="KLTN — Dinh Hai Long (24550046) &amp; Le Thien Tri (24550026)" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#9CA3AF;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="400" y="490" width="440" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
