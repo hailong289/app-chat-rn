@@ -3,8 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "preandroid": "node scripts/generate-firebase-config.js",
-    "preios": "node scripts/generate-firebase-config.js",
+    "preandroid": "node scripts/generate-firebase-config-android.js",
+    "preios": "node scripts/generate-firebase-config-ios.js",
     "android": "react-native run-android",
     "android:release": "react-native run-android --mode release",
     "android:cleanrun": "node scripts/clean-android-storage.js && npx react-native run-android",

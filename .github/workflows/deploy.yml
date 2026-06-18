@@ -119,8 +119,8 @@ jobs:
           FIREBASE_IOS_CLIENT_ID: ${{ secrets.FIREBASE_IOS_CLIENT_ID }}
           FIREBASE_IOS_API_KEY: ${{ secrets.FIREBASE_IOS_API_KEY }}
 
-      - name: Generate Firebase config
-        run: node scripts/generate-firebase-config.js
+      - name: Generate Android Firebase config
+        run: node scripts/generate-firebase-config-android.js
 
       - name: Build release APK
         working-directory: android
@@ -241,8 +241,8 @@ jobs:
           FIREBASE_IOS_CLIENT_ID: ${{ secrets.FIREBASE_IOS_CLIENT_ID }}
           FIREBASE_IOS_API_KEY: ${{ secrets.FIREBASE_IOS_API_KEY }}
 
-      - name: Generate Firebase config
-        run: node scripts/generate-firebase-config.js
+      - name: Generate iOS Firebase config
+        run: node scripts/generate-firebase-config-ios.js
 
       - name: Install CocoaPods
         run: bundle exec pod install --project-directory=ios
