@@ -126,6 +126,7 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       selectedAudioInput: '',
       selectedAudioOutput: '',
       selectedVideoInput: '',
+      cameraFacing: 'user',
     },
     socket: null,
     actionUserId: null,
@@ -853,6 +854,13 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
 
       set({ stream: { ...get().stream, localStream: stream } });
 
+      const facing = stream?.getVideoTracks?.()?.[0]?.getSettings?.()?.facingMode;
+      if (facing === 'user' || facing === 'environment') {
+        set((prev) => ({
+          devices: { ...prev.devices, cameraFacing: facing },
+        }));
+      }
+
       if (get().callMode === 'sfu') {
         await useSfuCallStore.getState().produceLocalStream(stream);
       }
@@ -1281,6 +1289,13 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
           const newStream = await mediaDevices.getUserMedia(constraints);
           set((prev) => ({ stream: { ...prev.stream, localStream: newStream } }));
 
+          const facing = newStream?.getVideoTracks?.()?.[0]?.getSettings?.()?.facingMode;
+          if (facing === 'user' || facing === 'environment') {
+            set((prev) => ({
+              devices: { ...prev.devices, cameraFacing: facing },
+            }));
+          }
+
           if (get().callMode === 'sfu') {
             await useSfuCallStore.getState().replaceTracksInProducers(newStream);
           } else {
@@ -1289,6 +1304,47 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         } catch (error) {
           console.error('[Call] Error switching device:', error);
         }
+      }
+    },
+
+    switchCamera: async () => {
+      const state = get();
+      if (state.mode !== 'video' || !state.action.isCameraEnabled) return;
+
+      const videoTrack = state.stream.localStream?.getVideoTracks?.()?.[0];
+      if (!videoTrack) return;
+
+      try {
+        if (typeof videoTrack._switchCamera === 'function') {
+          videoTrack._switchCamera();
+        } else {
+          const devices = state.devices.videoInputs;
+          if (devices.length < 2) return;
+          const currentId = state.devices.selectedVideoInput;
+          const currentIndex = devices.findIndex((d: any) => d.deviceId === currentId);
+          const next = devices[(currentIndex + 1) % devices.length];
+          if (next?.deviceId) {
+            await get().setDevice('videoInput', next.deviceId);
+          }
+          return;
+        }
+
+        const facing = videoTrack.getSettings?.()?.facingMode;
+        if (facing === 'user' || facing === 'environment') {
+          set((prev) => ({
+            devices: { ...prev.devices, cameraFacing: facing },
+          }));
+        } else {
+          set((prev) => ({
+            devices: {
+              ...prev.devices,
+              cameraFacing:
+                prev.devices.cameraFacing === 'user' ? 'environment' : 'user',
+            },
+          }));
+        }
+      } catch (error) {
+        console.warn('[Call] switchCamera failed:', error);
       }
     },
 

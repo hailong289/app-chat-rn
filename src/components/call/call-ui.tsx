@@ -59,11 +59,15 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
     callId,
     actionToggleTrack,
     setUserIdGhimmed,
+    switchCamera,
     endCall,
     releaseLocalCall,
     handleCreateLocalStream,
     socket,
   } = useCallStore();
+
+  const cameraFacing = useCallStore((s) => s.devices.cameraFacing);
+  const mirrorLocal = cameraFacing !== 'environment';
 
   const { socket: providerSocket } = useSocket('/call');
   const [deviceSelectorOpen, setDeviceSelectorOpen] = useState(false);
@@ -197,14 +201,25 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
       ? remoteEntries[0][0]
       : null;
 
+  const isLocalPinned = action.userIdGhimmed === currentUserId;
+  const primaryRemoteEntry = useMemo(() => {
+    if (remoteEntries.length === 0) return null;
+    if (action.userIdGhimmed && action.userIdGhimmed !== currentUserId) {
+      const key = `${roomId}-${action.userIdGhimmed}`;
+      const remote = stream.remoteStreams.get(key);
+      if (remote) return [key, remote] as const;
+    }
+    return remoteEntries[0];
+  }, [remoteEntries, action.userIdGhimmed, currentUserId, roomId, stream.remoteStreams]);
+
   const showGrid = remoteEntries.length > 1 && !action.userIdGhimmed;
   const cols = getGridColumns(remoteEntries.length);
   const tileW = (SCREEN_W - 16) / cols - 4;
   const showLocalFullscreen =
     mode === 'video' &&
     !!stream.localStream &&
-    remoteEntries.length === 0 &&
-    !!RTCView;
+    !!RTCView &&
+    (remoteEntries.length === 0 || isLocalPinned);
 
   if (status === 'idle' || status === 'ended') return null;
 
@@ -242,19 +257,28 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
       {/* Video / waiting area */}
       <View style={styles.mainView}>
         {showLocalFullscreen ? (
-          <View style={styles.tileFull}>
+          <TouchableOpacity
+            style={styles.tileFull}
+            activeOpacity={isLocalPinned && remoteEntries.length > 0 ? 0.9 : 1}
+            onPress={() => {
+              if (isLocalPinned && remoteEntries.length > 0) {
+                setUserIdGhimmed('');
+              }
+            }}
+            disabled={!isLocalPinned || remoteEntries.length === 0}
+          >
             <RTCView
               streamURL={stream.localStream.toURL?.() ?? stream.localStream.id}
               style={StyleSheet.absoluteFill}
               objectFit="cover"
-              mirror
+              mirror={mirrorLocal}
             />
             {!action.isCameraEnabled && (
               <View style={styles.cameraOffOverlay}>
                 <FontAwesome name="video-camera" size={28} color="#fff" />
               </View>
             )}
-          </View>
+          </TouchableOpacity>
         ) : remoteEntries.length > 0 ? (
           showGrid ? (
             <ScrollView contentContainerStyle={styles.gridWrap}>
@@ -274,7 +298,10 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
             </ScrollView>
           ) : (
             (() => {
-              const key = pinnedKey ?? remoteEntries[0]?.[0];
+              const key =
+                isLocalPinned || !action.userIdGhimmed
+                  ? remoteEntries[0]?.[0]
+                  : pinnedKey ?? remoteEntries[0]?.[0];
               const remoteStream = key ? stream.remoteStreams.get(key) : null;
               const member = key ? getMemberFromKey(key) : null;
               if (!remoteStream || !key) {
@@ -318,7 +345,8 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
         {/* Local camera PiP */}
         {mode === 'video' &&
           stream.localStream &&
-          action.userIdGhimmed !== currentUserId &&
+          !isLocalPinned &&
+          remoteEntries.length > 0 &&
           RTCView && (
             <TouchableOpacity
               style={styles.localPip}
@@ -329,7 +357,7 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
                 streamURL={stream.localStream.toURL?.() ?? stream.localStream.id}
                 style={StyleSheet.absoluteFill}
                 objectFit="cover"
-                mirror
+                mirror={mirrorLocal}
               />
               <View style={styles.pipLabel}>
                 <Text style={styles.pipLabelText}>Bạn</Text>
@@ -341,6 +369,40 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
               )}
             </TouchableOpacity>
           )}
+
+        {/* Remote PiP when local camera is pinned fullscreen */}
+        {isLocalPinned && primaryRemoteEntry && mode === 'video' && RTCView && (
+          <TouchableOpacity
+            style={styles.localPip}
+            onPress={() => {
+              const memberId = getMemberFromKey(primaryRemoteEntry[0])?.id ?? '';
+              if (memberId) setUserIdGhimmed(memberId);
+            }}
+            activeOpacity={0.9}
+          >
+            <RTCView
+              streamURL={
+                primaryRemoteEntry[1].toURL?.() ?? primaryRemoteEntry[1].id
+              }
+              style={StyleSheet.absoluteFill}
+              objectFit="cover"
+            />
+            <View style={styles.pipLabel}>
+              <Text style={styles.pipLabelText} numberOfLines={1}>
+                {getMemberFromKey(primaryRemoteEntry[0])?.fullname ?? 'Người dùng'}
+              </Text>
+            </View>
+            {isPeerCameraOff(
+              primaryRemoteEntry[0],
+              getMemberFromKey(primaryRemoteEntry[0]),
+              cameraOffPeers,
+            ) && (
+              <View style={styles.cameraOffOverlay}>
+                <FontAwesome name="video-camera" size={20} color="#fff" />
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Controls: 4 nút — mic, cam, cúp máy, thêm (dropdown lên) */}
@@ -364,6 +426,14 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
           highlightWhenActive
           onPress={() => actionToggleTrack('video', !action.isCameraEnabled)}
         />
+        {mode === 'video' && (
+          <CallControlButton
+            icon="refresh"
+            active={action.isCameraEnabled}
+            onPress={() => void switchCamera()}
+            disabled={!action.isCameraEnabled}
+          />
+        )}
         <CallControlButton icon="phone" danger onPress={handleEndCall} />
         <View style={styles.moreWrap}>
           {moreMenuOpen && (
@@ -563,6 +633,7 @@ function CallControlButton({
   active,
   highlightWhenActive,
   danger,
+  disabled,
 }: {
   icon: string;
   iconSlash?: boolean;
@@ -570,16 +641,19 @@ function CallControlButton({
   active?: boolean;
   highlightWhenActive?: boolean;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   const highlighted = highlightWhenActive && (active ?? false);
   return (
     <TouchableOpacity
       onPress={onPress}
+      disabled={disabled}
       style={[
         styles.ctrlBtn,
         danger && styles.ctrlBtnDanger,
         highlighted && styles.ctrlBtnPrimary,
         !danger && !highlighted && styles.ctrlBtnMuted,
+        disabled && styles.ctrlBtnDisabled,
       ]}
       activeOpacity={0.8}
     >
@@ -750,7 +824,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'flex-end',
-    gap: 20,
+    gap: 16,
     paddingHorizontal: 24,
     zIndex: 10,
   },
@@ -795,5 +869,8 @@ const styles = StyleSheet.create({
   },
   ctrlBtnDanger: {
     backgroundColor: '#EF4444',
+  },
+  ctrlBtnDisabled: {
+    opacity: 0.4,
   },
 });

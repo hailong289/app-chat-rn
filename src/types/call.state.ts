@@ -90,6 +90,7 @@ export interface CallState {
     selectedAudioInput: string;
     selectedAudioOutput: string;
     selectedVideoInput: string;
+    cameraFacing: 'user' | 'environment';
   };
   actionUserId: string | null;
   callId: string | null;
@@ -124,6 +125,7 @@ export interface CallState {
   setScreenSharerIdGhimmed: (userId: string) => void;
   getDevices: () => Promise<void>;
   setDevice: (type: 'audioInput' | 'audioOutput' | 'videoInput', deviceId: string) => Promise<void>;
+  switchCamera: () => Promise<void>;
   initSFU: () => Promise<void>;
   handleSFUSignal: (payload: any) => Promise<void>;
 }
