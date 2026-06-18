@@ -242,7 +242,7 @@ export const InputBar: React.FC<InputBarProps> = ({
         )}
 
         {/* Main Input Row */}
-        <View style={[styles.inputRow, { paddingBottom: keyboardVisible ? 8 : insets.bottom + 4 }]}>
+        <View style={[styles.inputRow, { paddingBottom: keyboardVisible ? 6 : insets.bottom + 4 }]}>
           {/* Plus Button */}
           <TouchableOpacity
             style={styles.iconBtn}

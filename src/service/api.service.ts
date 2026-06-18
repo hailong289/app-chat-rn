@@ -146,8 +146,8 @@ class ApiService {
         return promise;
     }
 
-    public async post<T>(url: string, data?: any) {
-        return await this.axiosInstance.post<T>(url, data);
+    public async post<T>(url: string, data?: any, config?: Parameters<typeof this.axiosInstance.post>[2]) {
+        return await this.axiosInstance.post<T>(url, data, config);
     }
 
     public async put<T>(url: string, data?: any) {

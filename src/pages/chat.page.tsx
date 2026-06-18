@@ -16,10 +16,10 @@ import {
   NativeScrollEvent,
   StyleSheet,
   Keyboard,
-  KeyboardEvent,
+  Dimensions,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import HeaderChatComponent from '../components/headers/headers-chat.component';
 import type { MainStackParamList } from '../navigations/MainStackNavigator';
@@ -48,7 +48,6 @@ const EMPTY_MESSAGES: MsgType[] = [];
 const ChatPage: React.FC = () => {
   const route = useRoute();
   const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
-  const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<ChatMessageItem>>(null);
   const hasMoreOlderRef = useRef(true);
   const atTopRef = useRef(false);
@@ -58,7 +57,9 @@ const ChatPage: React.FC = () => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const insets = useSafeAreaInsets();
   // Ref-based "at bottom" for the auto-scroll effect — avoids state flapping.
   const isAtBottomRef = useRef(true);
   // When true, every content-size change will scroll to bottom (until user drags).
@@ -92,23 +93,34 @@ const ChatPage: React.FC = () => {
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const changeEvent =
+      Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
 
-    const onShow = (event: KeyboardEvent) => {
-      if (Platform.OS !== 'ios') return;
-      setKeyboardHeight(Math.max(0, event.endCoordinates.height - insets.bottom));
+    const updateKeyboardHeight = (height: number) => {
+      setKeyboardHeight(height);
+      setKeyboardVisible(height > 0);
+    };
+
+    const onShow = (event: { endCoordinates: { height: number; screenY: number } }) => {
+      const screenHeight = Dimensions.get('window').height;
+      const height = Math.max(0, screenHeight - event.endCoordinates.screenY);
+      updateKeyboardHeight(height > 0 ? height : event.endCoordinates.height);
       if (isAtBottomRef.current) {
         requestAnimationFrame(() => handleScrollToEnd(true));
       }
     };
-    const onHide = () => setKeyboardHeight(0);
+    const onHide = () => updateKeyboardHeight(0);
 
     const showSub = Keyboard.addListener(showEvent, onShow);
     const hideSub = Keyboard.addListener(hideEvent, onHide);
+    const changeSub =
+      Platform.OS === 'ios' ? Keyboard.addListener(changeEvent, onShow) : null;
     return () => {
       showSub.remove();
       hideSub.remove();
+      changeSub?.remove();
     };
-  }, [insets.top, handleScrollToEnd]);
+  }, [handleScrollToEnd]);
 
   useEffect(() => {
     hasMoreOlderRef.current = true;
@@ -317,9 +329,12 @@ const ChatPage: React.FC = () => {
     });
   }, [navigation, openDrawer]);
 
+  const inputBottomOffset =
+    keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0;
+
   return (
     <OnReplyContext.Provider value={handleReply}>
-      <View style={[styles.flex, { paddingBottom: keyboardHeight }]}>
+      <View style={styles.flex}>
         <View style={styles.flex}>
           {showSkeleton ? (
             <View style={styles.skeletonWrap}>
@@ -331,6 +346,8 @@ const ChatPage: React.FC = () => {
               data={chatData}
               renderItem={renderItem}
               keyExtractor={keyExtractor}
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
               ListHeaderComponent={listHeaderComponent}
               ListEmptyComponent={
                 showEmpty ? (
@@ -376,18 +393,19 @@ const ChatPage: React.FC = () => {
           />
         </View>
 
-        <InputBar
-          roomId={chatId}
-          replyingTo={replyingTo}
-          typingUsers={currentTypingUsers}
-          currentUserId={user?.id}
-          keyboardVisible={keyboardHeight > 0}
-          onSend={handleSend}
-          onClearReply={() => setReplyingTo(null)}
-          onTypingStart={handleTypingStart}
-          onTypingStop={handleTypingStop}
-        />
-        {/* Modals rendered inside chat layout but appear above everything via native Modal layer */}
+        <View style={{ marginBottom: inputBottomOffset }}>
+          <InputBar
+            roomId={chatId}
+            replyingTo={replyingTo}
+            typingUsers={currentTypingUsers}
+            currentUserId={user?.id}
+            keyboardVisible={keyboardVisible}
+            onSend={handleSend}
+            onClearReply={() => setReplyingTo(null)}
+            onTypingStart={handleTypingStart}
+            onTypingStop={handleTypingStop}
+          />
+        </View>
         <ChatModals />
       </View>
 

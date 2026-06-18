@@ -136,12 +136,21 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
     // ─── Window / Screen management (RN: navigate instead of window.open) ─────
 
     openCall: (payload) => {
-      const { roomId, mode, members, currentUser, socket, callMode = 'p2p' } =
+      const { roomId, mode, members, currentUser, socket: payloadSocket, callMode = 'p2p' } =
         payload;
- 
+
       if (!currentUser?.id) {
         console.warn('[openCall] missing currentUser, aborting');
         return;
+      }
+
+      const callSocket = get().socket ?? payloadSocket;
+      if (!callSocket) {
+        console.warn('[openCall] call socket not ready');
+        return;
+      }
+      if (!callSocket.connected) {
+        callSocket.connect();
       }
 
       const memberMap = members.map((m: any) => ({
@@ -157,15 +166,15 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         mode,
         callMode,
         members: memberMap,
-        socket,
+        socket: callSocket,
         status: 'calling',
         callId: null,
         incomingCall: null,
       });
 
       if (callMode !== 'sfu') {
-        socket?.emit('call:request', {
-          actionUserId: currentUser?.id || '',
+        callSocket.emit('call:request', {
+          actionUserId: currentUser.id,
           membersIds: memberMap.map((m: any) => m.id),
           roomId,
           callType: mode,
@@ -278,7 +287,8 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
     // ─── Call lifecycle ───────────────────────────────────────────────────────
 
     acceptCall: async (payload) => {
-      const { roomId, members, currentUser, socket, callId } = payload;
+      const { roomId, members, currentUser, callId } = payload;
+      const socket = get().socket ?? payload.socket;
       const actionUserId = currentUser.id;
 
       if (get().callMode === 'sfu') {
@@ -983,47 +993,26 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
             break;
           }
 
-          if (!value && localStream) {
-            const videoTracks = localStream.getVideoTracks();
-            if (videoTracks.length > 0) {
-              const p2p = useP2pCallStore.getState();
-              const localScreenTrack =
-                get().stream.localScreenStream?.getVideoTracks()[0] ?? null;
-              for (const [key, pc] of p2p.peerConnections) {
-                if (pc.signalingState === 'closed') continue;
-                const screenSender = p2p.screenTransceivers.get(key)?.sender;
-                const isScreenSender = (s: any) =>
-                  s === screenSender ||
-                  (localScreenTrack !== null && s.track === localScreenTrack);
-                const tracked = p2p.cameraSenders.get(key);
-                const cameraSender =
-                  tracked && pc.getSenders().includes(tracked) && !isScreenSender(tracked)
-                    ? tracked
-                    : pc.getSenders().find((s: any) => s.track?.kind === 'video' && !isScreenSender(s));
-                if (cameraSender) {
-                  try {
-                    await cameraSender.replaceTrack(null);
-                  } catch {}
-                }
-              }
+          if (hasVideoTrack) {
+            localStream?.getVideoTracks().forEach((t: any) => {
+              t.enabled = value;
+            });
 
-              if (get().callMode === 'sfu') {
-                const sfuStore = useSfuCallStore.getState();
-                const ownScreen = sfuStore.sfu.screenProducer;
-                for (const producer of sfuStore.sfu.producers.values()) {
-                  if (producer.kind !== 'video' || producer.closed) continue;
-                  if (ownScreen && producer.id === ownScreen.id) continue;
-                  try { producer.pause(); } catch {}
-                }
-              }
-
-              for (const t of videoTracks) {
-                try { t.stop(); } catch {}
-                localStream.removeTrack(t);
+            if (get().callMode === 'sfu') {
+              const sfuStore = useSfuCallStore.getState();
+              const ownScreen = sfuStore.sfu.screenProducer;
+              for (const producer of sfuStore.sfu.producers.values()) {
+                if (producer.kind !== 'video' || producer.closed) continue;
+                if (ownScreen && producer.id === ownScreen.id) continue;
+                try {
+                  if (value) {
+                    await producer.resume();
+                  } else {
+                    await producer.pause();
+                  }
+                } catch {}
               }
             }
-          } else if (value && hasVideoTrack) {
-            localStream?.getVideoTracks().forEach((t: any) => { t.enabled = true; });
           }
 
           set((prev) => ({ action: { ...prev.action, isCameraEnabled: value } }));
@@ -1319,6 +1308,10 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       }
 
       const socket = state.socket ?? get().socket;
+      if (!socket) {
+        console.warn('[updateCallState] call socket not ready');
+        return;
+      }
 
       if (state.status === 'accepted') {
         set((prev) => ({

@@ -25,7 +25,7 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
   const { groups } = useContactStore();
   const { openCall } = useCallStore();
   const { user } = useAuthStore();
-  const { socket } = useSocket('/chat');
+  const { socket: callSocket } = useSocket('/call');
   const params = props.route.params as MainStackParamList['Chat'];
   const chatId = params?.roomId ? resolveCanonicalRoomId(params.roomId) : '';
   const room =
@@ -55,7 +55,7 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
         is_caller: m.id === user.id,
       })),
       currentUser: user,
-      socket,
+      socket: callSocket,
       callMode,
     });
   };

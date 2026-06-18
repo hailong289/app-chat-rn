@@ -5,11 +5,11 @@ import {
   TouchableOpacity,
   Pressable,
   StyleSheet,
-  SafeAreaView,
-  Dimensions,
   Platform,
   ScrollView,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FastImage from 'react-native-fast-image';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import useCallStore from '../../store/useCallStore';
@@ -45,6 +45,7 @@ interface CallUIProps {
 
 export default function CallUI({ isBackground = false }: CallUIProps) {
   const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
+  const insets = useSafeAreaInsets();
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
 
   const {
@@ -199,6 +200,11 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
   const showGrid = remoteEntries.length > 1 && !action.userIdGhimmed;
   const cols = getGridColumns(remoteEntries.length);
   const tileW = (SCREEN_W - 16) / cols - 4;
+  const showLocalFullscreen =
+    mode === 'video' &&
+    !!stream.localStream &&
+    remoteEntries.length === 0 &&
+    !!RTCView;
 
   if (status === 'idle' || status === 'ended') return null;
 
@@ -224,9 +230,9 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header overlay — matches web call page */}
-      <View style={styles.headerOverlay} pointerEvents="none">
+    <View style={styles.container}>
+      {/* Header overlay */}
+      <View style={[styles.headerOverlay, { top: insets.top + 8 }]} pointerEvents="none">
         <Text style={styles.headerTitle}>{headerTitle}</Text>
         {status === 'accepted' && (
           <Text style={styles.headerDuration}>{formatDuration(action.duration)}</Text>
@@ -235,7 +241,21 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
 
       {/* Video / waiting area */}
       <View style={styles.mainView}>
-        {remoteEntries.length > 0 ? (
+        {showLocalFullscreen ? (
+          <View style={styles.tileFull}>
+            <RTCView
+              streamURL={stream.localStream.toURL?.() ?? stream.localStream.id}
+              style={StyleSheet.absoluteFill}
+              objectFit="cover"
+              mirror
+            />
+            {!action.isCameraEnabled && (
+              <View style={styles.cameraOffOverlay}>
+                <FontAwesome name="video-camera" size={28} color="#fff" />
+              </View>
+            )}
+          </View>
+        ) : remoteEntries.length > 0 ? (
           showGrid ? (
             <ScrollView contentContainerStyle={styles.gridWrap}>
               {remoteEntries.map(([key, remoteStream]) => (
@@ -330,7 +350,7 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
           onPress={() => setMoreMenuOpen(false)}
         />
       )}
-      <View style={styles.controls}>
+      <View style={[styles.controls, { bottom: insets.bottom + 16 }]}>
         <CallControlButton
           icon="microphone"
           active={action.isMicEnabled}
@@ -391,7 +411,7 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
           onClose={() => setDeviceSelectorOpen(false)}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -478,7 +498,7 @@ function ParticipantTile({
           key={rtcViewKey}
           streamURL={stream.toURL?.() ?? stream.id}
           style={StyleSheet.absoluteFill}
-          objectFit={fullScreen ? 'contain' : 'cover'}
+          objectFit={fullScreen ? 'cover' : 'cover'}
         />
       ) : (
         <View style={styles.tileAvatarWrap}>
@@ -575,12 +595,11 @@ function CallControlButton({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
   },
   headerOverlay: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 56 : 40,
     left: 0,
     right: 0,
     zIndex: 10,
@@ -597,7 +616,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   mainView: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
   },
   gridWrap: {
@@ -616,8 +635,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   tileFull: {
-    flex: 1,
-    width: '100%',
+    ...StyleSheet.absoluteFillObject,
     borderRadius: 0,
   },
   tileAvatarWrap: {
@@ -660,7 +678,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   waiting: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
@@ -727,7 +745,6 @@ const styles = StyleSheet.create({
   },
   controls: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 28,
     left: 0,
     right: 0,
     flexDirection: 'row',

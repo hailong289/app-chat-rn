@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
-import { StatusBar, BackHandler } from 'react-native';
+import { StatusBar, BackHandler, View, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import useCallStore from '../store/useCallStore';
@@ -69,7 +69,7 @@ export default function CallPage() {
     didExitRef.current = false;
     prevStatusRef.current = initialStatus === 'joined' ? 'joined' : 'calling';
 
-    const effectiveSocket = socket ?? providerSocket;
+    const effectiveSocket = providerSocket ?? socket;
     if (!effectiveSocket || !currentUser) return;
 
     void updateCallState({
@@ -112,9 +112,16 @@ export default function CallPage() {
   }, [leaveCallScreen]);
 
   return (
-    <>
-      <StatusBar hidden />
+    <View style={styles.root}>
+      <StatusBar hidden translucent backgroundColor="transparent" />
       <CallUI />
-    </>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
+  },
+});
