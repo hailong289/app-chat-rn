@@ -24,6 +24,7 @@ export function getCallNavigationRef() {
 
 // Mutex for camera upgrade — prevents concurrent getUserMedia calls.
 let _upgradeVideoInFlight: Promise<void> | null = null;
+let _switchCameraInFlight = false;
 
 // Single duration ticker anchored to the server-canonical startedAt.
 let _durationTicker: ReturnType<typeof setInterval> | null = null;
@@ -1259,27 +1260,39 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         const currentStream = currentState.stream.localStream;
         if (!currentStream) return;
 
-        currentStream.getTracks().forEach((t: any) => t.stop());
+        if (type === 'audioInput') {
+          currentStream.getAudioTracks().forEach((t: any) => t.stop());
+        } else {
+          currentStream.getVideoTracks().forEach((t: any) => t.stop());
+        }
 
         const mediaDevices = _getMediaDevices();
         if (!mediaDevices) return;
 
         const constraints = {
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            deviceId: {
-              exact:
-                type === 'audioInput' ? deviceId : currentState.devices.selectedAudioInput,
-            },
-          },
+          audio:
+            type === 'audioInput' || currentStream.getAudioTracks().length > 0
+              ? {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                  deviceId: {
+                    exact:
+                      type === 'audioInput'
+                        ? deviceId
+                        : currentState.devices.selectedAudioInput,
+                  },
+                }
+              : false,
           video:
-            currentState.mode === 'video'
+            currentState.mode === 'video' &&
+            (type === 'videoInput' || currentStream.getVideoTracks().length > 0)
               ? {
                   deviceId: {
                     exact:
-                      type === 'videoInput' ? deviceId : currentState.devices.selectedVideoInput,
+                      type === 'videoInput'
+                        ? deviceId
+                        : currentState.devices.selectedVideoInput,
                   },
                 }
               : false,
@@ -1287,9 +1300,32 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
 
         try {
           const newStream = await mediaDevices.getUserMedia(constraints);
-          set((prev) => ({ stream: { ...prev.stream, localStream: newStream } }));
 
-          const facing = newStream?.getVideoTracks?.()?.[0]?.getSettings?.()?.facingMode;
+          if (type === 'audioInput') {
+            const newAudio = newStream.getAudioTracks()[0];
+            if (newAudio) {
+              currentStream.getAudioTracks().forEach((t: any) => {
+                currentStream.removeTrack(t);
+              });
+              currentStream.addTrack(newAudio);
+            }
+          } else {
+            const newVideo = newStream.getVideoTracks()[0];
+            if (newVideo) {
+              currentStream.getVideoTracks().forEach((t: any) => {
+                currentStream.removeTrack(t);
+              });
+              currentStream.addTrack(newVideo);
+            }
+          }
+
+          newStream.getTracks().forEach((t: any) => {
+            if (!currentStream.getTracks().includes(t)) t.stop();
+          });
+
+          set((prev) => ({ stream: { ...prev.stream, localStream: currentStream } }));
+
+          const facing = currentStream.getVideoTracks?.()?.[0]?.getSettings?.()?.facingMode;
           if (facing === 'user' || facing === 'environment') {
             set((prev) => ({
               devices: { ...prev.devices, cameraFacing: facing },
@@ -1297,9 +1333,11 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
           }
 
           if (get().callMode === 'sfu') {
-            await useSfuCallStore.getState().replaceTracksInProducers(newStream);
+            await useSfuCallStore.getState().replaceTracksInProducers(currentStream);
           } else {
-            await useP2pCallStore.getState().replaceTracksInPeers(newStream, 'both');
+            await useP2pCallStore
+              .getState()
+              .replaceTracksInPeers(currentStream, type === 'audioInput' ? 'audio' : 'video');
           }
         } catch (error) {
           console.error('[Call] Error switching device:', error);
@@ -1308,43 +1346,91 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
     },
 
     switchCamera: async () => {
+      if (_switchCameraInFlight) return;
+
       const state = get();
       if (state.mode !== 'video' || !state.action.isCameraEnabled) return;
 
-      const videoTrack = state.stream.localStream?.getVideoTracks?.()?.[0];
-      if (!videoTrack) return;
+      const localStream = state.stream.localStream;
+      const oldVideoTrack = localStream?.getVideoTracks?.()?.[0];
+      if (!localStream || !oldVideoTrack) return;
+
+      const mediaDevices = _getMediaDevices();
+      if (!mediaDevices) return;
+
+      const prevFacing = state.devices.cameraFacing;
+      const nextFacing = prevFacing === 'user' ? 'environment' : 'user';
+
+      _switchCameraInFlight = true;
+      set((prev) => ({
+        devices: { ...prev.devices, cameraFacing: nextFacing },
+      }));
 
       try {
-        if (typeof videoTrack._switchCamera === 'function') {
-          videoTrack._switchCamera();
-        } else {
-          const devices = state.devices.videoInputs;
-          if (devices.length < 2) return;
-          const currentId = state.devices.selectedVideoInput;
-          const currentIndex = devices.findIndex((d: any) => d.deviceId === currentId);
-          const next = devices[(currentIndex + 1) % devices.length];
-          if (next?.deviceId) {
-            await get().setDevice('videoInput', next.deviceId);
+        let newVideoTrack: any = null;
+
+        try {
+          const videoOnly = await mediaDevices.getUserMedia({
+            video: { facingMode: nextFacing },
+            audio: false,
+          });
+          newVideoTrack = videoOnly.getVideoTracks()[0];
+          videoOnly.getTracks().forEach((t: any) => {
+            if (t !== newVideoTrack) t.stop();
+          });
+        } catch {
+          if (typeof oldVideoTrack._switchCamera === 'function') {
+            oldVideoTrack._switchCamera();
+            await new Promise<void>((r) => setTimeout(r, 200));
+            const facing = oldVideoTrack.getSettings?.()?.facingMode;
+            set((prev) => ({
+              devices: {
+                ...prev.devices,
+                cameraFacing:
+                  facing === 'user' || facing === 'environment' ? facing : nextFacing,
+              },
+            }));
+            return;
           }
-          return;
+          throw new Error('switchCamera unsupported');
         }
 
-        const facing = videoTrack.getSettings?.()?.facingMode;
-        if (facing === 'user' || facing === 'environment') {
-          set((prev) => ({
-            devices: { ...prev.devices, cameraFacing: facing },
-          }));
+        if (!newVideoTrack) throw new Error('No video track');
+
+        localStream.removeTrack(oldVideoTrack);
+        try {
+          oldVideoTrack.stop();
+        } catch {}
+        localStream.addTrack(newVideoTrack);
+
+        const facing = newVideoTrack.getSettings?.()?.facingMode;
+        set((prev) => ({
+          stream: { ...prev.stream, localStream },
+          devices: {
+            ...prev.devices,
+            cameraFacing:
+              facing === 'user' || facing === 'environment' ? facing : nextFacing,
+          },
+        }));
+
+        if (state.callMode === 'sfu') {
+          const sfuStore = useSfuCallStore.getState();
+          const ownScreen = sfuStore.sfu.screenProducer;
+          for (const producer of sfuStore.sfu.producers.values()) {
+            if (producer.kind !== 'video' || producer.closed) continue;
+            if (ownScreen && producer.id === ownScreen.id) continue;
+            await producer.replaceTrack({ track: newVideoTrack });
+          }
         } else {
-          set((prev) => ({
-            devices: {
-              ...prev.devices,
-              cameraFacing:
-                prev.devices.cameraFacing === 'user' ? 'environment' : 'user',
-            },
-          }));
+          await useP2pCallStore.getState().replaceTracksInPeers(localStream, 'video');
         }
       } catch (error) {
+        set((prev) => ({
+          devices: { ...prev.devices, cameraFacing: prevFacing },
+        }));
         console.warn('[Call] switchCamera failed:', error);
+      } finally {
+        _switchCameraInFlight = false;
       }
     },
 

@@ -4,6 +4,7 @@ import useMessageStore from '../../store/useMessage';
 import useRoomStore from '../../store/useRoom';
 import useContactStore from '../../store/useContact';
 import { resolveCanonicalRoomId } from '../../libs/normalize-socket-message';
+import { normalizeCallHistory } from '../../libs/normalize-call-history';
 
 /**
  * Global socket handlers — mirrors app-chat-fe socketChatEventGlobal.tsx
@@ -154,13 +155,41 @@ export const SocketEventGlobal = () => {
   const onCallEnd = useRef((data: any) => {
     void require('../../store/useCallStore').default.getState().eventCall('end', data);
 
-    const callId = data?.callId;
-    const roomId = data?.roomId;
-    const members = data?.history?.members ?? data?.members;
+    const callId = data?.callId ?? data?.call_id;
+    const roomId = data?.roomId ?? data?.room_id;
+    const history = data?.history ?? data?.call_history ?? data?.callHistory;
+    const members = history?.members ?? data?.members;
+
+    if (data?.message) {
+      void useMessageStore.getState().upsetMsg(data.message);
+    } else if (history && roomId) {
+      const canonicalRoomId = resolveCanonicalRoomId(roomId);
+      const callHistory = normalizeCallHistory({
+        ...history,
+        call_id: history.call_id ?? history.callId ?? callId,
+        room_id: history.room_id ?? history.roomId ?? canonicalRoomId,
+        message_id: history.message_id ?? history.messageId ?? data?.messageId,
+      });
+      if (callHistory?.message_id) {
+        void useMessageStore.getState().upsetMsg({
+          id: callHistory.message_id,
+          roomId: canonicalRoomId,
+          type: 'call',
+          call_history: callHistory,
+          createdAt: history.started_at ?? history.startedAt ?? new Date().toISOString(),
+          sender: data?.sender ?? history?.sender,
+          content: '',
+        });
+      }
+    }
+
     if (callId && roomId && Array.isArray(members)) {
       useMessageStore.getState().patchCallMessage(roomId, callId, {
         members,
-        ended_at: data?.history?.ended_at ?? null,
+        ended_at: history?.ended_at ?? history?.endedAt ?? null,
+        message_id: history?.message_id ?? history?.messageId ?? data?.messageId,
+        call_type: history?.call_type ?? history?.callType,
+        duration: history?.duration,
       });
     }
   });

@@ -11,6 +11,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { HStack } from '../ui/hstack';
 import Helpers from '@/src/libs/helpers';
+import { normalizeCallHistory } from '@/src/libs/normalize-call-history';
 import ImageGrid from './image-grid.component';
 import VideoGrid from './video-grid.component';
 import { ImageAvatar } from './image-avatar.component';
@@ -281,7 +282,19 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
   }
 
   // Call message — bubble with avatar + reply preview
-  if (item.type === 'call' && item.call_history && !item.isDeleted) {
+  if (item.type === 'call' && !item.isDeleted) {
+    const callHistory =
+      item.call_history ??
+      normalizeCallHistory(item as unknown as Record<string, unknown>);
+    if (!callHistory) {
+      return (
+        <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
+          <View className="rounded-2xl px-4 py-2 bg-gray-100 border border-gray-200">
+            <Text className="text-sm text-gray-500">Cuộc gọi</Text>
+          </View>
+        </View>
+      );
+    }
     return (
       <GestureDetector gesture={longPressGesture}>
         <View className={`${messageSpacing} ${item.isMine ? 'items-end mr-2' : 'items-start ml-2'}`}>
@@ -316,7 +329,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = memo(({ item, onReply }) => 
                 alignSelf: item.isMine ? 'flex-end' : 'flex-start',
               }}
             >
-              <CallBubble callHistory={item.call_history} isMine={item.isMine} />
+              <CallBubble callHistory={callHistory} isMine={item.isMine} />
               <Text className="text-xs text-gray-400 mt-1">
                 {item.sender.fullname} • {Helpers.formatTime(new Date(item.createdAt))}
               </Text>

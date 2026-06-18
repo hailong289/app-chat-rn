@@ -83,7 +83,12 @@ export const sameMessageFields = (
     reply?: { _id?: string } | null;
     translation?: { text?: string; to?: string } | null;
     summary?: { text?: string } | null;
-    call_history?: { ended_at?: string | null; members?: unknown[] } | null;
+    call_history?: {
+      call_id?: string | null;
+      ended_at?: string | null;
+      members?: unknown[];
+      call_type?: string | null;
+    } | null;
   },
   b: typeof a,
 ): boolean => {
@@ -98,7 +103,10 @@ export const sameMessageFields = (
     (a.translation?.text ?? null) === (b.translation?.text ?? null) &&
     (a.translation?.to ?? null) === (b.translation?.to ?? null) &&
     (a.summary?.text ?? null) === (b.summary?.text ?? null) &&
+    (a.call_history?.call_id ?? null) === (b.call_history?.call_id ?? null) &&
+    (a.call_history != null) === (b.call_history != null) &&
     (a.call_history?.ended_at ?? null) === (b.call_history?.ended_at ?? null) &&
+    (a.call_history?.call_type ?? null) === (b.call_history?.call_type ?? null) &&
     (a.call_history?.members?.length ?? 0) === (b.call_history?.members?.length ?? 0) &&
     sameStringArr(a.hiddenBy as string[], b.hiddenBy as string[]) &&
     sameReactions(a.reactions, b.reactions) &&

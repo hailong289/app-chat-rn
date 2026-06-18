@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { FilePreview, MessageType, RoomData, SendMessageArgs } from "../types/message.type";
+import { FilePreview, MessageType, RoomData, SendMessageArgs, CallHistoryType } from "../types/message.type";
 import { ObjectId } from "bson";
 import Helpers, { normalizeEntityId } from "../libs/helpers";
 import MessageService from "../service/message.service";
@@ -9,6 +9,11 @@ import {
     resolveCanonicalRoomId,
     resolveMessageId,
 } from "../libs/normalize-socket-message";
+import {
+    mergeChatMessages,
+    mergeMessagePreserveCallHistory,
+    normalizeCallHistory,
+} from "../libs/normalize-call-history";
 import UploadService from "../service/upload.service";
 import { Messages } from "../models/messages.model";
 import useAuthStore from "./useAuth";
@@ -32,6 +37,18 @@ const isUploadableFile = (
 
 const hasUploadableFile = (attachment: FilePreview): attachment is UploadableAttachment =>
     isUploadableFile(attachment.file);
+
+const parseJsonValue = <T,>(value: unknown, fallback: T): T => {
+  if (value == null) return fallback;
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return fallback;
+    }
+  }
+  return value as T;
+};
 
 const sanitizeMessageForDB = (msg: MessageType): Record<string, any> => {
   const clean = {
@@ -62,7 +79,7 @@ const sanitizeMessageForDB = (msg: MessageType): Record<string, any> => {
     isDeleted: msg.isDeleted ? 1 : 0,
     read_by_count: msg.read_by_count ?? 0,
     status: msg.status || "delivered",
-    call_history: JSON.stringify((msg as any).call_history || null),
+    call_history: msg.call_history ?? null,
   };
   return clean;
 };
@@ -71,10 +88,12 @@ const sanitizeMessageFromAPI = (msg: any): MessageType => {
   const currentUser = useAuthStore.getState().user;
   const hiddenBy: string[] = Array.isArray(msg.hiddenBy) ? msg.hiddenBy : [];
   const rawRoomId = String(msg.roomId ?? msg.room_id ?? "");
+  const call_history = normalizeCallHistory(msg);
+  const resolvedType = call_history ? "call" : (msg.type || "text");
   return {
     id: resolveMessageId(msg) || msg.id,
     roomId: resolveCanonicalRoomId(rawRoomId),
-    type: msg.type || "text",
+    type: resolvedType,
     content: msg.content || "",
     createdAt: msg.createdAt,
     editedAt: msg.editedAt ?? null,
@@ -109,7 +128,7 @@ const sanitizeMessageFromAPI = (msg: any): MessageType => {
     read_by_count: msg.read_by_count ?? 0,
     status: (msg.status || "delivered") as MessageType["status"],
     room_event: msg.room_event ?? null,
-    call_history: msg.call_history ?? null,
+    call_history,
     placeholder: msg.placeholder,
     summary: msg.summary ?? null,
     translation: msg.translation ?? null,
@@ -124,17 +143,7 @@ const sanitizeMessageFromAPI = (msg: any): MessageType => {
 // ── Store ────────────────────────────────────────────────────────────
 
 const parseMessageFromDB = (row: Record<string, unknown>): MessageType => {
-  const parseJson = <T,>(v: unknown, fallback: T): T => {
-    if (v == null) return fallback;
-    if (typeof v === "string") {
-      try {
-        return JSON.parse(v) as T;
-      } catch {
-        return fallback;
-      }
-    }
-    return v as T;
-  };
+  const parseJson = parseJsonValue;
   return sanitizeMessageFromAPI({
     ...row,
     sender: parseJson(row.sender, { _id: "", fullname: "Unknown", avatar: "" }),
@@ -143,6 +152,7 @@ const parseMessageFromDB = (row: Record<string, unknown>): MessageType => {
     reply: parseJson(row.reply, undefined),
     hiddenBy: parseJson(row.hiddenBy, []),
     read_by: parseJson(row.read_by, []),
+    call_history: parseJson(row.call_history, null),
     pinned: !!row.pinned,
     isMine: !!row.isMine,
     isDeleted: !!row.isDeleted,
@@ -190,7 +200,13 @@ interface MessageState {
     patchCallMessage: (
       roomId: string,
       callId: string,
-      patch: { members?: any[]; ended_at?: string | null },
+      patch: {
+        members?: any[];
+        ended_at?: string | null;
+        message_id?: string;
+        call_type?: 'audio' | 'video';
+        duration?: number;
+      },
     ) => void;
     // Quiz
     updateQuizInMessages: (roomId: string, quizId: string, updatedQuiz: any) => void;
@@ -383,11 +399,7 @@ const useMessageStore = create<MessageState>()(
                     messages: [], input: null, attachments: null, ghim: [], updatedAt: null,
                 };
                 const existing = currentRoom.messages || [];
-                const apiIds = new Set(msgs.map((m) => m.id));
-                const socketOnly = existing.filter((m) => !apiIds.has(m.id));
-                const merged = [...msgs, ...socketOnly].sort(
-                    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-                );
+                const merged = mergeChatMessages(msgs, existing);
                 set({
                     messagesRoom: {
                         ...get().messagesRoom,
@@ -471,10 +483,9 @@ const useMessageStore = create<MessageState>()(
                 if (direction === "new") {
                     const apiIds = new Set(newMessages.map((m: MessageType) => m.id));
                     const socketOnly = freshMessages.filter((m) => !apiIds.has(m.id));
-                    const merged = [...newMessages, ...socketOnly].sort(
-                        (a, b) =>
-                            new Date(a.createdAt).getTime() -
-                            new Date(b.createdAt).getTime(),
+                    const merged = mergeChatMessages(
+                        [...newMessages, ...socketOnly],
+                        freshMessages,
                     );
                     const kept = merged.slice(-50);
                     const lastNewMessageId = kept[kept.length - 1]?.id;
@@ -616,7 +627,11 @@ const useMessageStore = create<MessageState>()(
             if (existingIndex === -1) {
                 updatedMessages = [...prevMessages, sanitized];
             } else {
-                updatedMessages = prevMessages.map((m, idx) => idx === existingIndex ? sanitized : m);
+                updatedMessages = prevMessages.map((m, idx) =>
+                    idx === existingIndex
+                        ? mergeMessagePreserveCallHistory(sanitized, m)
+                        : m,
+                );
             }
 
             set({
@@ -776,34 +791,87 @@ const useMessageStore = create<MessageState>()(
 
         // ── Patch Call Message ────────────────────────────────────────
         patchCallMessage: (roomId, callId, patch) => {
-            const currentRoom = get().messagesRoom[roomId];
+            const canonicalRoomId = resolveCanonicalRoomId(roomId);
+            const currentRoom =
+                get().messagesRoom[canonicalRoomId] ?? get().messagesRoom[roomId];
             if (!currentRoom) return;
 
+            const normalizedCallId = normalizeEntityId(callId);
             const msgs = currentRoom.messages;
-            const idx = msgs.findIndex(
-                (m) => m.type === 'call' && (m as any).call_history?.call_id === callId,
-            );
+            let idx = msgs.findIndex((m) => {
+                if (m.type !== 'call') return false;
+                const ch = (m as MessageType).call_history;
+                if (!ch) return false;
+                const id = normalizeEntityId(ch.call_id || ch._id);
+                return id === normalizedCallId;
+            });
+
+            if (idx === -1) {
+                idx = msgs.findIndex(
+                    (m) =>
+                        m.type === 'call' &&
+                        normalizeEntityId((m as MessageType).call_history?.message_id) ===
+                            normalizeEntityId(patch.message_id),
+                );
+            }
+
+            if (idx === -1) {
+                idx = msgs.findIndex((m) => m.type === 'call' && !(m as MessageType).call_history);
+            }
+
             if (idx === -1) return;
 
-            const updatedMessages = msgs.map((msg, i) =>
-                i === idx
-                    ? {
-                          ...msg,
-                          call_history: {
-                              ...((msg as any).call_history ?? {}),
-                              ...(patch.members ? { members: patch.members } : {}),
-                              ...(patch.ended_at !== undefined ? { ended_at: patch.ended_at } : {}),
-                          },
-                      }
-                    : msg,
+            const existingHistory = normalizeCallHistory(
+                msgs[idx] as unknown as Record<string, unknown>,
             );
+            const patchHistory = normalizeCallHistory({
+                call_id: normalizedCallId,
+                room_id: canonicalRoomId,
+                message_id: patch.message_id ?? existingHistory?.message_id,
+                members: patch.members,
+                ended_at: patch.ended_at ?? undefined,
+                call_type: patch.call_type,
+                duration: patch.duration,
+            } as Record<string, unknown>);
+
+            const updatedMessages: MessageType[] = msgs.map((msg, i) => {
+                if (i !== idx) return msg;
+                const mergedHistory: CallHistoryType = {
+                    ...(existingHistory ?? {
+                        _id: normalizedCallId,
+                        call_id: normalizedCallId,
+                        room_id: canonicalRoomId,
+                        call_type: 'audio',
+                        message_id: msg.id,
+                        members: [],
+                        started_at: '',
+                        ended_at: '',
+                        duration: 0,
+                    }),
+                    ...(patchHistory ?? {}),
+                    ...(patch.members ? { members: patch.members } : {}),
+                    ...(patch.ended_at !== undefined ? { ended_at: patch.ended_at ?? '' } : {}),
+                    call_id: normalizedCallId,
+                };
+                return {
+                    ...msg,
+                    type: 'call',
+                    call_history: mergedHistory,
+                };
+            });
 
             set({
                 messagesRoom: {
                     ...get().messagesRoom,
-                    [roomId]: { ...currentRoom, messages: updatedMessages },
+                    [canonicalRoomId]: { ...currentRoom, messages: updatedMessages },
                 },
             });
+
+            const patched = updatedMessages[idx] as MessageType;
+            Messages.getInstance()
+                .getQuery()
+                .upsert(sanitizeMessageForDB(patched))
+                .catch(() => {});
         },
 
         // ── Update Quiz in Messages ─────────────────────────────────

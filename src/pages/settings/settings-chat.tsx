@@ -11,17 +11,17 @@ import {
   Linking,
   Platform,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import messaging from "@react-native-firebase/messaging";
 import { Toast } from "toastify-react-native";
 import HeaderComponent from "../../components/headers/headers.component";
 import Permission from "../../libs/permission";
-import { useSQLite } from "../../providers/sqlite.provider";
+import { clearAppCache } from "../../libs/clear-app-cache";
 
 export default function SettingsChatPage() {
   const navigation = useNavigation();
-  const { resetDatabase } = useSQLite();
   const [enabled, setEnabled] = useState(false);
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -94,9 +94,28 @@ export default function SettingsChatPage() {
   };
 
   const handleClearCache = () => {
-    resetDatabase()
-      .then(() => Toast.show({ type: "success", text1: "Đã xóa cache cục bộ" }))
-      .catch(() => Toast.show({ type: "error", text1: "Xóa cache thất bại" }));
+    Alert.alert(
+      "Xóa dữ liệu cache",
+      "Xóa tin nhắn và danh sách phòng đã lưu trên máy? Dữ liệu trên server không bị ảnh hưởng.",
+      [
+        { text: "Hủy", style: "cancel" },
+        {
+          text: "Xóa",
+          style: "destructive",
+          onPress: () => {
+            setBusy(true);
+            clearAppCache()
+              .then(() =>
+                Toast.show({ type: "success", text1: "Đã xóa cache cục bộ" }),
+              )
+              .catch(() =>
+                Toast.show({ type: "error", text1: "Xóa cache thất bại" }),
+              )
+              .finally(() => setBusy(false));
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -130,8 +149,16 @@ export default function SettingsChatPage() {
 
       <View style={styles.card}>
         <Text style={styles.sectionLabel}>Dữ liệu cục bộ</Text>
-        <TouchableOpacity style={styles.clearBtn} onPress={handleClearCache}>
-          <Text style={styles.clearBtnText}>Xóa cache tin nhắn (SQLite)</Text>
+        <TouchableOpacity
+          style={styles.clearBtn}
+          onPress={handleClearCache}
+          disabled={busy}
+        >
+          {busy ? (
+            <ActivityIndicator color="#b91c1c" />
+          ) : (
+            <Text style={styles.clearBtnText}>Xóa dữ liệu cache</Text>
+          )}
         </TouchableOpacity>
         <Text style={styles.hint}>
           Xóa dữ liệu chat đã lưu trên máy. Tin nhắn trên server không bị ảnh
