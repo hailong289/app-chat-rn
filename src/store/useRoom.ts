@@ -88,6 +88,7 @@ const useRoomStore = create<RoomState>()(
             } catch (error) {
                 // Fallback to SQLite on error
                 await get().getRoomsByType(payload.type, payload.limit, payload.offset);
+                set({ isLoading: false });
                 payload.error?.(error);
             }
         },
