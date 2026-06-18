@@ -75,7 +75,11 @@ jobs:
             "FIREBASE_CLIENT_ID_3",
             "FIREBASE_API_KEY",
             "FIREBASE_CERT_HASH_1",
-            "FIREBASE_CERT_HASH_2"
+            "FIREBASE_CERT_HASH_2",
+            "FIREBASE_IOS_APP_ID",
+            "FIREBASE_IOS_BUNDLE_ID",
+            "FIREBASE_IOS_CLIENT_ID",
+            "FIREBASE_IOS_API_KEY"
           ];
 
           const config = Object.fromEntries(keys.map((key) => [key, process.env[key] || ""]));
@@ -110,8 +114,12 @@ jobs:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_CERT_HASH_1: ${{ secrets.FIREBASE_CERT_HASH_1 }}
           FIREBASE_CERT_HASH_2: ${{ secrets.FIREBASE_CERT_HASH_2 }}
+          FIREBASE_IOS_APP_ID: ${{ secrets.FIREBASE_IOS_APP_ID }}
+          FIREBASE_IOS_BUNDLE_ID: ${{ secrets.FIREBASE_IOS_BUNDLE_ID || secrets.FIREBASE_PACKAGE_NAME }}
+          FIREBASE_IOS_CLIENT_ID: ${{ secrets.FIREBASE_IOS_CLIENT_ID }}
+          FIREBASE_IOS_API_KEY: ${{ secrets.FIREBASE_IOS_API_KEY }}
 
-      - name: Generate Android Firebase config
+      - name: Generate Firebase config
         run: node scripts/generate-firebase-config.js
 
       - name: Build release APK
@@ -189,7 +197,11 @@ jobs:
             "FIREBASE_CLIENT_ID_3",
             "FIREBASE_API_KEY",
             "FIREBASE_CERT_HASH_1",
-            "FIREBASE_CERT_HASH_2"
+            "FIREBASE_CERT_HASH_2",
+            "FIREBASE_IOS_APP_ID",
+            "FIREBASE_IOS_BUNDLE_ID",
+            "FIREBASE_IOS_CLIENT_ID",
+            "FIREBASE_IOS_API_KEY"
           ];
 
           const config = Object.fromEntries(keys.map((key) => [key, process.env[key] || ""]));
@@ -224,6 +236,13 @@ jobs:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_CERT_HASH_1: ${{ secrets.FIREBASE_CERT_HASH_1 }}
           FIREBASE_CERT_HASH_2: ${{ secrets.FIREBASE_CERT_HASH_2 }}
+          FIREBASE_IOS_APP_ID: ${{ secrets.FIREBASE_IOS_APP_ID }}
+          FIREBASE_IOS_BUNDLE_ID: ${{ secrets.FIREBASE_IOS_BUNDLE_ID || secrets.FIREBASE_PACKAGE_NAME }}
+          FIREBASE_IOS_CLIENT_ID: ${{ secrets.FIREBASE_IOS_CLIENT_ID }}
+          FIREBASE_IOS_API_KEY: ${{ secrets.FIREBASE_IOS_API_KEY }}
+
+      - name: Generate Firebase config
+        run: node scripts/generate-firebase-config.js
 
       - name: Install CocoaPods
         run: bundle exec pod install --project-directory=ios

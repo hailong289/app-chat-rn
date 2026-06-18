@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "preandroid": "node scripts/generate-firebase-config.js",
+    "preios": "node scripts/generate-firebase-config.js",
     "android": "react-native run-android",
+    "android:release": "react-native run-android --mode release",
     "android:cleanrun": "node scripts/clean-android-storage.js && npx react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
@@ -15,7 +17,8 @@
     "android:remove:build": "cd android && rd /s /q build",
     "android:remove:app": "adb uninstall com.appchatrn",
     "type-check": "tsc --noEmit",
-    "generate:icon:app": "node scripts/generate-icons.js"
+    "generate:icon:app": "node scripts/generate-icons.js",
+    "build:android:release": "npx react-native build-android --mode=release --tasks assembleRelease"
   },
   "dependencies": {
     "@expo/html-elements": "^0.12.5",

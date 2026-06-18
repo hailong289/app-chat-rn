@@ -17,4 +17,8 @@ declare module "@/env.json" {
   export const FIREBASE_API_KEY: string;
   export const FIREBASE_CERT_HASH_1: string;
   export const FIREBASE_CERT_HASH_2: string;
+  export const FIREBASE_IOS_APP_ID: string;
+  export const FIREBASE_IOS_BUNDLE_ID: string;
+  export const FIREBASE_IOS_CLIENT_ID: string;
+  export const FIREBASE_IOS_API_KEY: string;
 }
