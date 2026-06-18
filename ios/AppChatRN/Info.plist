@@ -36,7 +36,9 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Ứng dụng cần quyền micro để ghi và gửi tin nhắn thoại.</string>
+	<string>Ứng dụng cần quyền micro để gọi thoại, gọi video và ghi tin nhắn thoại.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Ứng dụng cần quyền camera để thực hiện cuộc gọi video.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

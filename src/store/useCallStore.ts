@@ -53,6 +53,7 @@ function _stopDurationTicker() {
 
 import { ensureWebRtcGlobals } from '../libs/webrtc-globals';
 import { navigateToCallScreen } from '../libs/safe-navigation';
+import Permission from '../libs/permission';
 
 // RN: mediaDevices from react-native-webrtc
 function _getMediaDevices() {
@@ -777,6 +778,12 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       }
 
       const currentState = get();
+      const micGranted = await Permission.requestMicrophonePermission();
+      if (!micGranted) {
+        console.warn('[Call] Microphone permission denied');
+        return;
+      }
+
       const audioConstraint: any = {
         echoCancellation: true,
         noiseSuppression: true,
@@ -798,14 +805,35 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
           return;
         }
       } else {
+        const cameraGranted = await Permission.requestCameraPermission();
+        if (!cameraGranted) {
+          console.warn('[Call] Camera permission denied, falling back to audio only');
+          try {
+            stream = await mediaDevices.getUserMedia({ audio: audioConstraint });
+            set({
+              mode: 'audio',
+              stream: { ...get().stream, localStream: stream },
+              action: { ...get().action, isCameraEnabled: false },
+            });
+          } catch (audioErr) {
+            console.error('[Call] Could not get microphone:', audioErr);
+          }
+          return;
+        }
+
         try {
           stream = await mediaDevices.getUserMedia({
             audio: audioConstraint,
             video: videoConstraint,
           });
-        } catch {
+        } catch (err) {
+          console.warn('[Call] Could not get camera, falling back to audio:', err);
           try {
             stream = await mediaDevices.getUserMedia({ audio: audioConstraint });
+            set({
+              mode: 'audio',
+              action: { ...get().action, isCameraEnabled: false },
+            });
           } catch (audioErr) {
             console.error('[Call] Could not get microphone:', audioErr);
             return;

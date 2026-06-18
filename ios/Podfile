@@ -16,6 +16,7 @@ prepare_react_native_project!
 setup_permissions([
   'Notifications',
   'Microphone',
+  'Camera',
 ])
 
 linkage = ENV['USE_FRAMEWORKS']
