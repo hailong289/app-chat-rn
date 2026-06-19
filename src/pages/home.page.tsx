@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { FlatList, TouchableOpacity, Text, View, RefreshControl } from 'react-native';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { FlatList, TouchableOpacity, Text, View, RefreshControl, ActivityIndicator } from 'react-native';
 import { Box } from '@/src/components/ui/box';
 import { HStack } from '@/src/components/ui/hstack';
 import { VStack } from '@/src/components/ui/vstack';
@@ -64,10 +64,6 @@ const HomePage = () => {
   const { rooms, getRooms, isLoading } = useRoomStore();
   const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    fetchRooms();
-  }, []);
-
   const fetchRooms = useCallback(async () => {
     getRooms({
       limit: 20,
@@ -77,6 +73,10 @@ const HomePage = () => {
       error: () => setRefreshing(false),
     });
   }, [getRooms]);
+
+  useEffect(() => {
+    fetchRooms();
+  }, [fetchRooms]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -95,20 +95,35 @@ const HomePage = () => {
 
   const keyExtractor = useCallback((item: Room) => item.id, []);
 
-  const listEmpty = !isLoading ? (
-    <VStack className="items-center justify-center py-20 px-5">
-      <FontAwesome name="comments" size={64} color="#9CA3AF" />
-      <Text className="text-[18px] font-semibold text-gray-500 mt-4 text-center">Chưa có tin nhắn nào</Text>
-      <Text className="text-[14px] text-gray-400 mt-2 text-center mb-6">Hãy kết bạn để bắt đầu trò chuyện</Text>
-      <TouchableOpacity
-        onPress={() => navigation.navigate('AddContact')}
-        className="bg-[#42A59F] px-6 py-3 rounded-lg"
-        activeOpacity={0.7}
-      >
-        <Text className="text-white text-[16px] font-semibold">Kết bạn ngay</Text>
-      </TouchableOpacity>
-    </VStack>
-  ) : null;
+  const listEmpty = useMemo(() => {
+    if (isLoading && rooms.length === 0) {
+      return (
+        <VStack className="items-center justify-center py-20 px-5">
+          <ActivityIndicator size="large" color="#42A59F" />
+          <Text className="text-[14px] text-gray-500 mt-4 text-center">Đang tải tin nhắn...</Text>
+        </VStack>
+      );
+    }
+
+    if (!isLoading && rooms.length === 0) {
+      return (
+        <VStack className="items-center justify-center py-20 px-5">
+          <FontAwesome name="comments" size={64} color="#9CA3AF" />
+          <Text className="text-[18px] font-semibold text-gray-500 mt-4 text-center">Chưa có tin nhắn nào</Text>
+          <Text className="text-[14px] text-gray-400 mt-2 text-center mb-6">Hãy kết bạn để bắt đầu trò chuyện</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('AddContact')}
+            className="bg-[#42A59F] px-6 py-3 rounded-lg"
+            activeOpacity={0.7}
+          >
+            <Text className="text-white text-[16px] font-semibold">Kết bạn ngay</Text>
+          </TouchableOpacity>
+        </VStack>
+      );
+    }
+
+    return null;
+  }, [isLoading, rooms.length, navigation]);
 
   return (
     <View className="flex-1 bg-white">

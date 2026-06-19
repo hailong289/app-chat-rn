@@ -38,6 +38,7 @@ type InputBarProps = {
   onClearReply?: () => void;
   onTypingStart?: () => void;
   onTypingStop?: () => void;
+  keyboardVisible?: boolean;
   disabled?: boolean;
   disabledMessage?: string;
 };
@@ -51,6 +52,7 @@ export const InputBar: React.FC<InputBarProps> = ({
   onClearReply,
   onTypingStart,
   onTypingStop,
+  keyboardVisible = false,
   disabled = false,
   disabledMessage,
 }) => {
@@ -240,7 +242,7 @@ export const InputBar: React.FC<InputBarProps> = ({
         )}
 
         {/* Main Input Row */}
-        <View style={[styles.inputRow, { paddingBottom: insets.bottom + 4 }]}>
+        <View style={[styles.inputRow, { paddingBottom: keyboardVisible ? 8 : insets.bottom + 4 }]}>
           {/* Plus Button */}
           <TouchableOpacity
             style={styles.iconBtn}

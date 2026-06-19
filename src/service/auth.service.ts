@@ -3,10 +3,16 @@ import { AuthMetadata, PayloadForgotPassword, PayloadLogin, PayloadRegister, Pay
 import ApiResponse from "../types/response.type";
 import apiService from "./api.service";
 
+const LOGIN_TIMEOUT_MS = 5000;
+
 export default class AuthService {
     // ── Login ──────────────────────────────────────────────────────────
     public static async login(payload: Omit<PayloadLogin, 'success' | 'error'>) {
-        return apiService.post<ApiResponse<AuthMetadata>>('/auth/login', payload);
+        return apiService.axios.post<ApiResponse<AuthMetadata>>(
+            '/auth/login',
+            payload,
+            { timeout: LOGIN_TIMEOUT_MS },
+        );
     }
 
     // ── Send OTP ───────────────────────────────────────────────────────

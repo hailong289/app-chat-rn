@@ -10,14 +10,16 @@ import {
   View,
   Text,
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   NativeSyntheticEvent,
   NativeScrollEvent,
   StyleSheet,
+  Keyboard,
+  KeyboardEvent,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import HeaderChatComponent from '../components/headers/headers-chat.component';
 import type { MainStackParamList } from '../navigations/MainStackNavigator';
@@ -46,6 +48,7 @@ const EMPTY_MESSAGES: MsgType[] = [];
 const ChatPage: React.FC = () => {
   const route = useRoute();
   const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
+  const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<ChatMessageItem>>(null);
   const hasMoreOlderRef = useRef(true);
   const atTopRef = useRef(false);
@@ -55,6 +58,7 @@ const ChatPage: React.FC = () => {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [replyingTo, setReplyingTo] = useState<MessageType | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   // Ref-based "at bottom" for the auto-scroll effect — avoids state flapping.
   const isAtBottomRef = useRef(true);
   // When true, every content-size change will scroll to bottom (until user drags).
@@ -84,6 +88,27 @@ const ChatPage: React.FC = () => {
       flatListRef.current?.scrollToEnd({ animated });
     });
   }, [chatData.length]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const onShow = (event: KeyboardEvent) => {
+      if (Platform.OS !== 'ios') return;
+      setKeyboardHeight(Math.max(0, event.endCoordinates.height - insets.bottom));
+      if (isAtBottomRef.current) {
+        requestAnimationFrame(() => handleScrollToEnd(true));
+      }
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showSub = Keyboard.addListener(showEvent, onShow);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [insets.top, handleScrollToEnd]);
 
   useEffect(() => {
     hasMoreOlderRef.current = true;
@@ -294,11 +319,7 @@ const ChatPage: React.FC = () => {
 
   return (
     <OnReplyContext.Provider value={handleReply}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-      >
+      <View style={[styles.flex, { paddingBottom: keyboardHeight }]}>
         <View style={styles.flex}>
           {showSkeleton ? (
             <View style={styles.skeletonWrap}>
@@ -360,14 +381,15 @@ const ChatPage: React.FC = () => {
           replyingTo={replyingTo}
           typingUsers={currentTypingUsers}
           currentUserId={user?.id}
+          keyboardVisible={keyboardHeight > 0}
           onSend={handleSend}
           onClearReply={() => setReplyingTo(null)}
           onTypingStart={handleTypingStart}
           onTypingStop={handleTypingStop}
         />
-        {/* Modals rendered inside KAV but appear above everything via native Modal layer */}
+        {/* Modals rendered inside chat layout but appear above everything via native Modal layer */}
         <ChatModals />
-      </KeyboardAvoidingView>
+      </View>
 
       <ChatDrawer
         visible={drawerVisible}
