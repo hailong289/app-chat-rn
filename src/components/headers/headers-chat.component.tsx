@@ -25,7 +25,7 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
   const { groups } = useContactStore();
   const { openCall } = useCallStore();
   const { user } = useAuthStore();
-  const { socket } = useSocket('/chat');
+  const { socket: callSocket } = useSocket('/call');
   const params = props.route.params as MainStackParamList['Chat'];
   const chatId = params?.roomId ? resolveCanonicalRoomId(params.roomId) : '';
   const room =
@@ -38,23 +38,24 @@ const HeaderChatComponent: React.FC<HeaderChatProps> = (props) => {
   const backgroundColor = '#42A59F';
 
   const handleStartCall = (mode: 'audio' | 'video') => {
-    if (!room?.roomId) return;
+    const roomKey = room?.roomId || room?.id;
+    if (!roomKey) return;
     if (!user) {
       console.warn('[handleStartCall] no user yet, skipping');
       return;
     }
     const callMode = room.type !== 'private' ? 'sfu' : 'p2p';
     openCall({
-      roomId: room.roomId,
+      roomId: roomKey,
       mode,
       members: (room.members || []).map((m: any) => ({
         id: m.id,
-        fullname: m.name,
+        fullname: m.fullname || m.name || 'User',
         avatar: m.avatar,
         is_caller: m.id === user.id,
       })),
       currentUser: user,
-      socket,
+      socket: callSocket,
       callMode,
     });
   };

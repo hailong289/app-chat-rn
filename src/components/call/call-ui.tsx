@@ -5,11 +5,11 @@ import {
   TouchableOpacity,
   Pressable,
   StyleSheet,
-  SafeAreaView,
-  Dimensions,
   Platform,
   ScrollView,
+  Dimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import FastImage from 'react-native-fast-image';
 import FontAwesome from '@react-native-vector-icons/fontawesome';
 import useCallStore from '../../store/useCallStore';
@@ -45,6 +45,7 @@ interface CallUIProps {
 
 export default function CallUI({ isBackground = false }: CallUIProps) {
   const navigation = useNavigation<StackNavigationProp<MainStackParamList>>();
+  const insets = useSafeAreaInsets();
   const currentUserId = useAuthStore((s) => s.user?.id ?? '');
 
   const {
@@ -58,11 +59,15 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
     callId,
     actionToggleTrack,
     setUserIdGhimmed,
+    switchCamera,
     endCall,
     releaseLocalCall,
     handleCreateLocalStream,
     socket,
   } = useCallStore();
+
+  const cameraFacing = useCallStore((s) => s.devices.cameraFacing);
+  const mirrorLocal = cameraFacing !== 'environment';
 
   const { socket: providerSocket } = useSocket('/call');
   const [deviceSelectorOpen, setDeviceSelectorOpen] = useState(false);
@@ -196,9 +201,25 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
       ? remoteEntries[0][0]
       : null;
 
+  const isLocalPinned = action.userIdGhimmed === currentUserId;
+  const primaryRemoteEntry = useMemo(() => {
+    if (remoteEntries.length === 0) return null;
+    if (action.userIdGhimmed && action.userIdGhimmed !== currentUserId) {
+      const key = `${roomId}-${action.userIdGhimmed}`;
+      const remote = stream.remoteStreams.get(key);
+      if (remote) return [key, remote] as const;
+    }
+    return remoteEntries[0];
+  }, [remoteEntries, action.userIdGhimmed, currentUserId, roomId, stream.remoteStreams]);
+
   const showGrid = remoteEntries.length > 1 && !action.userIdGhimmed;
   const cols = getGridColumns(remoteEntries.length);
   const tileW = (SCREEN_W - 16) / cols - 4;
+  const showLocalFullscreen =
+    mode === 'video' &&
+    !!stream.localStream &&
+    !!RTCView &&
+    (remoteEntries.length === 0 || isLocalPinned);
 
   if (status === 'idle' || status === 'ended') return null;
 
@@ -224,9 +245,9 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header overlay — matches web call page */}
-      <View style={styles.headerOverlay} pointerEvents="none">
+    <View style={styles.container}>
+      {/* Header overlay */}
+      <View style={[styles.headerOverlay, { top: insets.top + 8 }]} pointerEvents="none">
         <Text style={styles.headerTitle}>{headerTitle}</Text>
         {status === 'accepted' && (
           <Text style={styles.headerDuration}>{formatDuration(action.duration)}</Text>
@@ -235,7 +256,30 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
 
       {/* Video / waiting area */}
       <View style={styles.mainView}>
-        {remoteEntries.length > 0 ? (
+        {showLocalFullscreen ? (
+          <TouchableOpacity
+            style={styles.tileFull}
+            activeOpacity={isLocalPinned && remoteEntries.length > 0 ? 0.9 : 1}
+            onPress={() => {
+              if (isLocalPinned && remoteEntries.length > 0) {
+                setUserIdGhimmed('');
+              }
+            }}
+            disabled={!isLocalPinned || remoteEntries.length === 0}
+          >
+            <RTCView
+              streamURL={stream.localStream.toURL?.() ?? stream.localStream.id}
+              style={StyleSheet.absoluteFill}
+              objectFit="cover"
+              mirror={mirrorLocal}
+            />
+            {!action.isCameraEnabled && (
+              <View style={styles.cameraOffOverlay}>
+                <FontAwesome name="video-camera" size={28} color="#fff" />
+              </View>
+            )}
+          </TouchableOpacity>
+        ) : remoteEntries.length > 0 ? (
           showGrid ? (
             <ScrollView contentContainerStyle={styles.gridWrap}>
               {remoteEntries.map(([key, remoteStream]) => (
@@ -254,7 +298,10 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
             </ScrollView>
           ) : (
             (() => {
-              const key = pinnedKey ?? remoteEntries[0]?.[0];
+              const key =
+                isLocalPinned || !action.userIdGhimmed
+                  ? remoteEntries[0]?.[0]
+                  : pinnedKey ?? remoteEntries[0]?.[0];
               const remoteStream = key ? stream.remoteStreams.get(key) : null;
               const member = key ? getMemberFromKey(key) : null;
               if (!remoteStream || !key) {
@@ -298,7 +345,8 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
         {/* Local camera PiP */}
         {mode === 'video' &&
           stream.localStream &&
-          action.userIdGhimmed !== currentUserId &&
+          !isLocalPinned &&
+          remoteEntries.length > 0 &&
           RTCView && (
             <TouchableOpacity
               style={styles.localPip}
@@ -309,7 +357,7 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
                 streamURL={stream.localStream.toURL?.() ?? stream.localStream.id}
                 style={StyleSheet.absoluteFill}
                 objectFit="cover"
-                mirror
+                mirror={mirrorLocal}
               />
               <View style={styles.pipLabel}>
                 <Text style={styles.pipLabelText}>Bạn</Text>
@@ -321,6 +369,40 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
               )}
             </TouchableOpacity>
           )}
+
+        {/* Remote PiP when local camera is pinned fullscreen */}
+        {isLocalPinned && primaryRemoteEntry && mode === 'video' && RTCView && (
+          <TouchableOpacity
+            style={styles.localPip}
+            onPress={() => {
+              const memberId = getMemberFromKey(primaryRemoteEntry[0])?.id ?? '';
+              if (memberId) setUserIdGhimmed(memberId);
+            }}
+            activeOpacity={0.9}
+          >
+            <RTCView
+              streamURL={
+                primaryRemoteEntry[1].toURL?.() ?? primaryRemoteEntry[1].id
+              }
+              style={StyleSheet.absoluteFill}
+              objectFit="cover"
+            />
+            <View style={styles.pipLabel}>
+              <Text style={styles.pipLabelText} numberOfLines={1}>
+                {getMemberFromKey(primaryRemoteEntry[0])?.fullname ?? 'Người dùng'}
+              </Text>
+            </View>
+            {isPeerCameraOff(
+              primaryRemoteEntry[0],
+              getMemberFromKey(primaryRemoteEntry[0]),
+              cameraOffPeers,
+            ) && (
+              <View style={styles.cameraOffOverlay}>
+                <FontAwesome name="video-camera" size={20} color="#fff" />
+              </View>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Controls: 4 nút — mic, cam, cúp máy, thêm (dropdown lên) */}
@@ -330,7 +412,7 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
           onPress={() => setMoreMenuOpen(false)}
         />
       )}
-      <View style={styles.controls}>
+      <View style={[styles.controls, { bottom: insets.bottom + 16 }]}>
         <CallControlButton
           icon="microphone"
           active={action.isMicEnabled}
@@ -344,6 +426,14 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
           highlightWhenActive
           onPress={() => actionToggleTrack('video', !action.isCameraEnabled)}
         />
+        {mode === 'video' && (
+          <CallControlButton
+            icon="refresh"
+            active={action.isCameraEnabled}
+            onPress={() => void switchCamera()}
+            disabled={!action.isCameraEnabled}
+          />
+        )}
         <CallControlButton icon="phone" danger onPress={handleEndCall} />
         <View style={styles.moreWrap}>
           {moreMenuOpen && (
@@ -391,7 +481,7 @@ export default function CallUI({ isBackground = false }: CallUIProps) {
           onClose={() => setDeviceSelectorOpen(false)}
         />
       )}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -478,7 +568,7 @@ function ParticipantTile({
           key={rtcViewKey}
           streamURL={stream.toURL?.() ?? stream.id}
           style={StyleSheet.absoluteFill}
-          objectFit={fullScreen ? 'contain' : 'cover'}
+          objectFit={fullScreen ? 'cover' : 'cover'}
         />
       ) : (
         <View style={styles.tileAvatarWrap}>
@@ -543,6 +633,7 @@ function CallControlButton({
   active,
   highlightWhenActive,
   danger,
+  disabled,
 }: {
   icon: string;
   iconSlash?: boolean;
@@ -550,16 +641,19 @@ function CallControlButton({
   active?: boolean;
   highlightWhenActive?: boolean;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   const highlighted = highlightWhenActive && (active ?? false);
   return (
     <TouchableOpacity
       onPress={onPress}
+      disabled={disabled}
       style={[
         styles.ctrlBtn,
         danger && styles.ctrlBtnDanger,
         highlighted && styles.ctrlBtnPrimary,
         !danger && !highlighted && styles.ctrlBtnMuted,
+        disabled && styles.ctrlBtnDisabled,
       ]}
       activeOpacity={0.8}
     >
@@ -575,12 +669,11 @@ function CallControlButton({
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
   },
   headerOverlay: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 56 : 40,
     left: 0,
     right: 0,
     zIndex: 10,
@@ -597,7 +690,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   mainView: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000',
   },
   gridWrap: {
@@ -616,8 +709,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   tileFull: {
-    flex: 1,
-    width: '100%',
+    ...StyleSheet.absoluteFillObject,
     borderRadius: 0,
   },
   tileAvatarWrap: {
@@ -660,7 +752,7 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   waiting: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
@@ -727,13 +819,12 @@ const styles = StyleSheet.create({
   },
   controls: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 28,
     left: 0,
     right: 0,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'flex-end',
-    gap: 20,
+    gap: 16,
     paddingHorizontal: 24,
     zIndex: 10,
   },
@@ -778,5 +869,8 @@ const styles = StyleSheet.create({
   },
   ctrlBtnDanger: {
     backgroundColor: '#EF4444',
+  },
+  ctrlBtnDisabled: {
+    opacity: 0.4,
   },
 });

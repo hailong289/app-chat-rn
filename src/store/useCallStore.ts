@@ -53,6 +53,7 @@ function _stopDurationTicker() {
 
 import { ensureWebRtcGlobals } from '../libs/webrtc-globals';
 import { navigateToCallScreen } from '../libs/safe-navigation';
+import Permission from '../libs/permission';
 
 // RN: mediaDevices from react-native-webrtc
 function _getMediaDevices() {
@@ -125,6 +126,7 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       selectedAudioInput: '',
       selectedAudioOutput: '',
       selectedVideoInput: '',
+      cameraFacing: 'user',
     },
     socket: null,
     actionUserId: null,
@@ -135,12 +137,21 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
     // ─── Window / Screen management (RN: navigate instead of window.open) ─────
 
     openCall: (payload) => {
-      const { roomId, mode, members, currentUser, socket, callMode = 'p2p' } =
+      const { roomId, mode, members, currentUser, socket: payloadSocket, callMode = 'p2p' } =
         payload;
- 
+
       if (!currentUser?.id) {
         console.warn('[openCall] missing currentUser, aborting');
         return;
+      }
+
+      const callSocket = get().socket ?? payloadSocket;
+      if (!callSocket) {
+        console.warn('[openCall] call socket not ready');
+        return;
+      }
+      if (!callSocket.connected) {
+        callSocket.connect();
       }
 
       const memberMap = members.map((m: any) => ({
@@ -156,15 +167,15 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         mode,
         callMode,
         members: memberMap,
-        socket,
+        socket: callSocket,
         status: 'calling',
         callId: null,
         incomingCall: null,
       });
 
       if (callMode !== 'sfu') {
-        socket?.emit('call:request', {
-          actionUserId: currentUser?.id || '',
+        callSocket.emit('call:request', {
+          actionUserId: currentUser.id,
           membersIds: memberMap.map((m: any) => m.id),
           roomId,
           callType: mode,
@@ -277,7 +288,8 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
     // ─── Call lifecycle ───────────────────────────────────────────────────────
 
     acceptCall: async (payload) => {
-      const { roomId, members, currentUser, socket, callId } = payload;
+      const { roomId, members, currentUser, callId } = payload;
+      const socket = get().socket ?? payload.socket;
       const actionUserId = currentUser.id;
 
       if (get().callMode === 'sfu') {
@@ -777,6 +789,12 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       }
 
       const currentState = get();
+      const micGranted = await Permission.requestMicrophonePermission();
+      if (!micGranted) {
+        console.warn('[Call] Microphone permission denied');
+        return;
+      }
+
       const audioConstraint: any = {
         echoCancellation: true,
         noiseSuppression: true,
@@ -798,14 +816,35 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
           return;
         }
       } else {
+        const cameraGranted = await Permission.requestCameraPermission();
+        if (!cameraGranted) {
+          console.warn('[Call] Camera permission denied, falling back to audio only');
+          try {
+            stream = await mediaDevices.getUserMedia({ audio: audioConstraint });
+            set({
+              mode: 'audio',
+              stream: { ...get().stream, localStream: stream },
+              action: { ...get().action, isCameraEnabled: false },
+            });
+          } catch (audioErr) {
+            console.error('[Call] Could not get microphone:', audioErr);
+          }
+          return;
+        }
+
         try {
           stream = await mediaDevices.getUserMedia({
             audio: audioConstraint,
             video: videoConstraint,
           });
-        } catch {
+        } catch (err) {
+          console.warn('[Call] Could not get camera, falling back to audio:', err);
           try {
             stream = await mediaDevices.getUserMedia({ audio: audioConstraint });
+            set({
+              mode: 'audio',
+              action: { ...get().action, isCameraEnabled: false },
+            });
           } catch (audioErr) {
             console.error('[Call] Could not get microphone:', audioErr);
             return;
@@ -814,6 +853,13 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       }
 
       set({ stream: { ...get().stream, localStream: stream } });
+
+      const facing = stream?.getVideoTracks?.()?.[0]?.getSettings?.()?.facingMode;
+      if (facing === 'user' || facing === 'environment') {
+        set((prev) => ({
+          devices: { ...prev.devices, cameraFacing: facing },
+        }));
+      }
 
       if (get().callMode === 'sfu') {
         await useSfuCallStore.getState().produceLocalStream(stream);
@@ -955,47 +1001,26 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
             break;
           }
 
-          if (!value && localStream) {
-            const videoTracks = localStream.getVideoTracks();
-            if (videoTracks.length > 0) {
-              const p2p = useP2pCallStore.getState();
-              const localScreenTrack =
-                get().stream.localScreenStream?.getVideoTracks()[0] ?? null;
-              for (const [key, pc] of p2p.peerConnections) {
-                if (pc.signalingState === 'closed') continue;
-                const screenSender = p2p.screenTransceivers.get(key)?.sender;
-                const isScreenSender = (s: any) =>
-                  s === screenSender ||
-                  (localScreenTrack !== null && s.track === localScreenTrack);
-                const tracked = p2p.cameraSenders.get(key);
-                const cameraSender =
-                  tracked && pc.getSenders().includes(tracked) && !isScreenSender(tracked)
-                    ? tracked
-                    : pc.getSenders().find((s: any) => s.track?.kind === 'video' && !isScreenSender(s));
-                if (cameraSender) {
-                  try {
-                    await cameraSender.replaceTrack(null);
-                  } catch {}
-                }
-              }
+          if (hasVideoTrack) {
+            localStream?.getVideoTracks().forEach((t: any) => {
+              t.enabled = value;
+            });
 
-              if (get().callMode === 'sfu') {
-                const sfuStore = useSfuCallStore.getState();
-                const ownScreen = sfuStore.sfu.screenProducer;
-                for (const producer of sfuStore.sfu.producers.values()) {
-                  if (producer.kind !== 'video' || producer.closed) continue;
-                  if (ownScreen && producer.id === ownScreen.id) continue;
-                  try { producer.pause(); } catch {}
-                }
-              }
-
-              for (const t of videoTracks) {
-                try { t.stop(); } catch {}
-                localStream.removeTrack(t);
+            if (get().callMode === 'sfu') {
+              const sfuStore = useSfuCallStore.getState();
+              const ownScreen = sfuStore.sfu.screenProducer;
+              for (const producer of sfuStore.sfu.producers.values()) {
+                if (producer.kind !== 'video' || producer.closed) continue;
+                if (ownScreen && producer.id === ownScreen.id) continue;
+                try {
+                  if (value) {
+                    await producer.resume();
+                  } else {
+                    await producer.pause();
+                  }
+                } catch {}
               }
             }
-          } else if (value && hasVideoTrack) {
-            localStream?.getVideoTracks().forEach((t: any) => { t.enabled = true; });
           }
 
           set((prev) => ({ action: { ...prev.action, isCameraEnabled: value } }));
@@ -1264,6 +1289,13 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
           const newStream = await mediaDevices.getUserMedia(constraints);
           set((prev) => ({ stream: { ...prev.stream, localStream: newStream } }));
 
+          const facing = newStream?.getVideoTracks?.()?.[0]?.getSettings?.()?.facingMode;
+          if (facing === 'user' || facing === 'environment') {
+            set((prev) => ({
+              devices: { ...prev.devices, cameraFacing: facing },
+            }));
+          }
+
           if (get().callMode === 'sfu') {
             await useSfuCallStore.getState().replaceTracksInProducers(newStream);
           } else {
@@ -1272,6 +1304,47 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
         } catch (error) {
           console.error('[Call] Error switching device:', error);
         }
+      }
+    },
+
+    switchCamera: async () => {
+      const state = get();
+      if (state.mode !== 'video' || !state.action.isCameraEnabled) return;
+
+      const videoTrack = state.stream.localStream?.getVideoTracks?.()?.[0];
+      if (!videoTrack) return;
+
+      try {
+        if (typeof videoTrack._switchCamera === 'function') {
+          videoTrack._switchCamera();
+        } else {
+          const devices = state.devices.videoInputs;
+          if (devices.length < 2) return;
+          const currentId = state.devices.selectedVideoInput;
+          const currentIndex = devices.findIndex((d: any) => d.deviceId === currentId);
+          const next = devices[(currentIndex + 1) % devices.length];
+          if (next?.deviceId) {
+            await get().setDevice('videoInput', next.deviceId);
+          }
+          return;
+        }
+
+        const facing = videoTrack.getSettings?.()?.facingMode;
+        if (facing === 'user' || facing === 'environment') {
+          set((prev) => ({
+            devices: { ...prev.devices, cameraFacing: facing },
+          }));
+        } else {
+          set((prev) => ({
+            devices: {
+              ...prev.devices,
+              cameraFacing:
+                prev.devices.cameraFacing === 'user' ? 'environment' : 'user',
+            },
+          }));
+        }
+      } catch (error) {
+        console.warn('[Call] switchCamera failed:', error);
       }
     },
 
@@ -1291,6 +1364,10 @@ const useCallStore: UseBoundStore<StoreApi<CallState>> = create<CallState>()(
       }
 
       const socket = state.socket ?? get().socket;
+      if (!socket) {
+        console.warn('[updateCallState] call socket not ready');
+        return;
+      }
 
       if (state.status === 'accepted') {
         set((prev) => ({

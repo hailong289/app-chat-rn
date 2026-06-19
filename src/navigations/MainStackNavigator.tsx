@@ -1,5 +1,5 @@
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
+import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
 import { NavigatorScreenParams } from '@react-navigation/native';
 import MainNavigator, { MainTabParamList } from './MainNavigator';
 import SearchPage from '../pages/search.page';
@@ -90,7 +90,12 @@ const MainStackNavigator = () => {
                 options={{
                     headerShown: false,
                     gestureEnabled: false,
-                    presentation: 'modal',
+                    presentation: 'card',
+                    animation: 'fade',
+                    cardStyle: { flex: 1, backgroundColor: '#000' },
+                    cardOverlayEnabled: false,
+                    cardShadowEnabled: false,
+                    cardStyleInterpolator: CardStyleInterpolators.forFadeFromCenter,
                 }}
             />
             <MainStack.Screen

@@ -2,6 +2,9 @@ import { Platform } from "react-native";
 import { UploadSingleResp, UploadApiResponse } from "../types/upload.type.ts";
 import apiService from "./api.service";
 
+/** Timeout riêng cho upload ảnh/file — không phụ thuộc default của ApiService. */
+const UPLOAD_TIMEOUT_MS = 10_000;
+
 export type UploadMultipleItem = UploadSingleResp & { index?: number };
 export type UploadMultipleResp =
   | { files: UploadMultipleItem[] } // trường hợp backend trả dạng mảng object
@@ -47,7 +50,9 @@ export default class UploadService {
     form.append("folder", folder);
 
     // ApiService đã tự set Content-Type + Authorization
-    return apiService.post<UploadSingleResp>("/filesystem/upload-single", form);
+    return apiService.post<UploadSingleResp>("/filesystem/upload-single", form, {
+      timeout: UPLOAD_TIMEOUT_MS,
+    });
   }
 
   static uploadMultiple(files: Array<File | Blob>, folder = "message") {
@@ -59,7 +64,8 @@ export default class UploadService {
 
     return apiService.post<UploadMultipleResp>(
       "/filesystem/upload-multiple",
-      form
+      form,
+      { timeout: UPLOAD_TIMEOUT_MS },
     );
   }
 
@@ -86,10 +92,11 @@ export default class UploadService {
     form.append("roomId", options?.roomId ?? "avatar");
     form.append("id", options?.id ?? "");
 
-    const response = await apiService.withTimeout(10000).axios.post<UploadApiResponse>(
+    const response = await apiService.axios.post<UploadApiResponse>(
       options?.endpoint ?? "/filesystem/upload-single-user",
       form,
       {
+        timeout: UPLOAD_TIMEOUT_MS,
         signal: options?.signal,
         onUploadProgress: (e) => {
           if (e.total && options?.onProgress) {

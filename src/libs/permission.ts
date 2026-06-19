@@ -3,6 +3,36 @@ import { check, PERMISSIONS, request, requestNotifications, RESULTS } from "reac
 
 
 class Permission {
+  /** Yêu cầu quyền camera (video call) */
+  static async requestCameraPermission(): Promise<boolean> {
+    if (Platform.OS === 'android') {
+      const status = await check(PERMISSIONS.ANDROID.CAMERA);
+      if (status === RESULTS.GRANTED) return true;
+      const result = await request(PERMISSIONS.ANDROID.CAMERA);
+      return result === RESULTS.GRANTED;
+    }
+
+    const status = await check(PERMISSIONS.IOS.CAMERA);
+    if (status === RESULTS.GRANTED) return true;
+    const result = await request(PERMISSIONS.IOS.CAMERA);
+    return result === RESULTS.GRANTED;
+  }
+
+  /** Yêu cầu quyền micro (gọi thoại / ghi âm) */
+  static async requestMicrophonePermission(): Promise<boolean> {
+    if (Platform.OS === 'android') {
+      const status = await check(PERMISSIONS.ANDROID.RECORD_AUDIO);
+      if (status === RESULTS.GRANTED) return true;
+      const result = await request(PERMISSIONS.ANDROID.RECORD_AUDIO);
+      return result === RESULTS.GRANTED;
+    }
+
+    const status = await check(PERMISSIONS.IOS.MICROPHONE);
+    if (status === RESULTS.GRANTED) return true;
+    const result = await request(PERMISSIONS.IOS.MICROPHONE);
+    return result === RESULTS.GRANTED;
+  }
+
   /** Yêu cầu quyền thông báo */
   static async requestNotificationPermission(): Promise<boolean> {
     if (Platform.OS === 'android') {
